@@ -193,31 +193,80 @@ export default {
             if (this.loading) this.loadingTime++;
         }, 1000);
     },
+    // Ask the GoHighLevel parent frame for the encrypted user payload.
+    // Custom menu links open the page in an iframe without an ssoToken in the URL,
+    // so this handshake is the only way to prove who is looking at the page.
+    requestGhlUserData(timeoutMs = 5000) {
+      if (window.parent === window) return Promise.resolve(null);
+      return new Promise((resolve) => {
+        let done = false;
+        const finish = (val) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          window.removeEventListener('message', onMessage);
+          resolve(val);
+        };
+        const onMessage = (event) => {
+          const data = event.data;
+          if (!data || typeof data !== 'object') return;
+          if (data.message === 'REQUEST_USER_DATA_RESPONSE' && data.payload) {
+            finish(data.payload);
+          }
+        };
+        const timer = setTimeout(() => finish(null), timeoutMs);
+        window.addEventListener('message', onMessage);
+        try {
+          window.parent.postMessage({ message: 'REQUEST_USER_DATA' }, '*');
+        } catch (e) {
+          finish(null);
+        }
+      });
+    },
+    async exchangeSsoToken(ssoToken) {
+      const res = await fetch('/api/auth/sso', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ssoToken })
+      });
+      if (!res.ok) {
+        console.error('[Auth] SSO exchange failed:', res.status, await res.text());
+        return false;
+      }
+      const data = await res.json();
+      this.sessionToken = data.sessionToken;
+      if (data.locationId) this.locationId = data.locationId;
+      console.log('[Auth] SSO authenticated, locationId:', this.locationId);
+      return true;
+    },
+    // Gets a session token from the URL token or the GHL iframe handshake.
+    async ensureSession() {
+      if (this.sessionToken) return true;
+      const urlParams = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      let ssoToken = urlParams.get('ssoToken') || hashParams.get('ssoToken');
+      if (!ssoToken) {
+        console.log('[Auth] No ssoToken in URL, asking GHL parent window...');
+        ssoToken = await this.requestGhlUserData();
+      }
+      if (!ssoToken) return false;
+      return await this.exchangeSsoToken(ssoToken);
+    },
     async initContext() {
       try {
         const urlParams = new URLSearchParams(window.location.search);
         const hashParams = new URLSearchParams(window.location.hash.substring(1));
 
-        // === Primary Auth Path: GHL SSO Token ===
-        const ssoToken = urlParams.get('ssoToken') || hashParams.get('ssoToken');
-        if (ssoToken) {
-          console.log('[Auth] SSO token found, authenticating...');
-          const res = await fetch('/api/auth/sso', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ssoToken })
-          });
-          if (res.ok) {
-            const data = await res.json();
-            this.sessionToken = data.sessionToken;
-            this.locationId = data.locationId;
-            console.log('[Auth] SSO authenticated, locationId:', this.locationId);
-            await this.loadSettings();
-          } else {
-            this.ssoError = 'Authentication failed. Please re-open this page from GoHighLevel.';
-            console.error('[Auth] SSO exchange failed:', await res.text());
-          }
-          return; // Don't fall through to manual detection when SSO token exists
+        // === Primary Auth Path: GHL SSO Token (URL or iframe handshake) ===
+        const hasUrlToken = !!(urlParams.get('ssoToken') || hashParams.get('ssoToken'));
+        const authenticated = await this.ensureSession();
+        if (authenticated && this.locationId) {
+          await this.loadSettings();
+          return;
+        }
+        if (hasUrlToken) {
+          this.ssoError = 'Authentication failed. Please re-open this page from GoHighLevel.';
+          return;
         }
 
         // === Fallback: Manual locationId detection (for internal testing) ===
@@ -256,7 +305,13 @@ export default {
       try {
         const headers = this.sessionToken ? { 'Authorization': `Bearer ${this.sessionToken}` } : {};
         const res = await fetch(`/api/settings`, { headers });
-        if (!res.ok) throw new Error("API Error");
+        if (res.status === 401) {
+          this.ssoError = 'GoHighLevel login could not be verified. Open this page from the "Romdix SMS Config" menu inside GoHighLevel.';
+          this.providers = [];
+          this.defaultProviderId = '';
+          return;
+        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         this.providers = data.providers || [];
         this.defaultProviderId = data.defaultProviderId || '';
@@ -265,6 +320,7 @@ export default {
         }
       } catch (e) {
         console.error("Failed to load settings", e);
+        this.ssoError = `Could not load settings: ${e.message}`;
       }
     },
     
@@ -365,17 +421,39 @@ export default {
     },
     async persistState() {
       try {
-        const headers = { 'Content-Type': 'application/json' };
-        if (this.sessionToken) headers['Authorization'] = `Bearer ${this.sessionToken}`;
-        const res = await fetch('/api/settings', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            defaultProviderId: this.defaultProviderId,
-            providers: this.providers
-          })
+        const body = JSON.stringify({
+          defaultProviderId: this.defaultProviderId,
+          providers: this.providers
         });
-        if (!res.ok) throw new Error("Failed to save to server");
+
+        const send = async () => {
+          const headers = { 'Content-Type': 'application/json' };
+          if (this.sessionToken) headers['Authorization'] = `Bearer ${this.sessionToken}`;
+          return fetch('/api/settings', { method: 'POST', headers, body });
+        };
+
+        let res = await send();
+        // Session token can expire (8h) or be missing — try the GHL handshake once more.
+        if (res.status === 401) {
+          console.log('[Auth] Save rejected with 401, re-authenticating...');
+          this.sessionToken = null;
+          if (await this.ensureSession()) {
+            res = await send();
+          }
+        }
+
+        if (!res.ok) {
+          let detail = '';
+          try {
+            const data = await res.json();
+            detail = data.error || '';
+          } catch (e) { /* non-JSON error body */ }
+          if (res.status === 401) {
+            detail = 'GoHighLevel login could not be verified. Open this page from the "Romdix SMS Config" menu inside GoHighLevel and try again.';
+            this.ssoError = detail;
+          }
+          throw new Error(detail || `HTTP ${res.status}`);
+        }
       } catch (e) {
         console.error(e);
         this.message = `Error saving: ${e.message}`;
