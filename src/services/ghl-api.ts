@@ -86,7 +86,9 @@ async function request<T>(
       }
     }
     throw new GhlApiError(
-      `HighLevel API ${method} ${path} failed`,
+      `HighLevel API ${method} ${path} failed (${error?.response?.status || 'no response'}): ${
+        error?.response?.data?.message || error?.message || 'unknown error'
+      }`,
       error?.response?.status,
       error?.response?.data
     );
