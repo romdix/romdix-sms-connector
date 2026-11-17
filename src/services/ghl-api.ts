@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { storage, InstallationRecord } from './storage';
 
-const API_VERSION = '2021-07-28';
+const API_VERSION = 'v3';
 
 // Read at call time: dotenv may not have run when this module is first imported.
 function apiDomain(): string {
