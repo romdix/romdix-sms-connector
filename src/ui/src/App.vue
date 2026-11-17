@@ -3,7 +3,10 @@
     <div class="container">
       <div class="header">
         <h1>SMS Providers</h1>
-        <button v-if="!loading && locationId" @click="openModal()" class="primary-btn add-btn">+ Add Provider</button>
+        <div class="header-actions">
+          <button v-if="!loading && locationId" @click="openModal()" class="primary-btn add-btn">+ Add Provider</button>
+          <button v-if="!loading && providers.length > 0" @click="disconnect" class="danger-btn">Disconnect</button>
+        </div>
       </div>
       
       <div v-if="loading" class="loading-state">
@@ -107,7 +110,7 @@
               </div>
               <div class="form-group">
                 <label>Icombd Password</label>
-                <input v-model="modalSettings.config.pass" type="password" placeholder="Password" />
+                <input v-model="modalSettings.config.pass" type="password" :placeholder="secretPlaceholder('pass', 'Password')" />
               </div>
               <div class="form-group">
                 <label>Sender ID</label>
@@ -118,13 +121,13 @@
            <!-- Reve SMS Fields -->
            <div v-else-if="modalSettings.type === 'revesms'">
                <div class="form-group">
-                <label>API Key</label>
-                <input v-model="modalSettings.config.apikey" type="text" placeholder="API Key" />
-              </div>
-              <div class="form-group">
-                <label>Secret Key</label>
-                <input v-model="modalSettings.config.secretkey" type="password" placeholder="Secret Key" />
-              </div>
+                 <label>API Key</label>
+                 <input v-model="modalSettings.config.apikey" type="text" :placeholder="secretPlaceholder('apikey', 'API Key')" />
+               </div>
+               <div class="form-group">
+                 <label>Secret Key</label>
+                 <input v-model="modalSettings.config.secretkey" type="password" :placeholder="secretPlaceholder('secretkey', 'Secret Key')" />
+               </div>
               <div class="form-group">
                 <label>Caller ID / Sender ID <small style="font-weight:normal; color:#6b7280;">(Required for sending)</small></label>
                 <input v-model="modalSettings.config.callerID" type="text" placeholder="Caller ID" />
@@ -265,7 +268,7 @@ export default {
           return;
         }
         if (hasUrlToken) {
-          this.ssoError = 'Authentication failed. Please re-open this page from GoHighLevel.';
+          this.ssoError = 'Authentication failed. Please re-open this page from inside your CRM.';
           return;
         }
 
@@ -306,7 +309,7 @@ export default {
         const headers = this.sessionToken ? { 'Authorization': `Bearer ${this.sessionToken}` } : {};
         const res = await fetch(`/api/settings`, { headers });
         if (res.status === 401) {
-          this.ssoError = 'GoHighLevel login could not be verified. Open this page from the "Romdix SMS Config" menu inside GoHighLevel.';
+          this.ssoError = 'CRM login could not be verified. Open this page from inside your CRM and try again.';
           this.providers = [];
           this.defaultProviderId = '';
           return;
@@ -412,6 +415,26 @@ export default {
       this.message = 'Provider deleted.';
       this.error = false;
     },
+    secretPlaceholder(field, fallback) {
+      const saved = Array.isArray(this.modalSettings.config.secretsSet) && this.modalSettings.config.secretsSet.includes(field);
+      return saved ? 'Saved — leave blank to keep' : fallback;
+    },
+    async disconnect() {
+      if (!confirm('Disconnect this sub-account? Saved provider credentials will be deleted.')) return;
+      try {
+        const headers = {};
+        if (this.sessionToken) headers['Authorization'] = `Bearer ${this.sessionToken}`;
+        const res = await fetch('/api/settings', { method: 'DELETE', headers });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        this.providers = [];
+        this.defaultProviderId = '';
+        this.message = 'Disconnected. Provider credentials deleted.';
+        this.error = false;
+      } catch (e) {
+        this.message = `Disconnect failed: ${e.message}`;
+        this.error = true;
+      }
+    },
     async saveActiveState() {
       this.saving = true;
       await this.persistState();
@@ -470,6 +493,7 @@ export default {
         // Test endpoint expects { providerType: 'revesms', apikey: '...', etc }
         const testPayload = {
           providerType: this.modalSettings.type,
+          providerId: this.editingProviderId || null,
           ...this.modalSettings.config
         };
 
@@ -573,6 +597,19 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   background-color: white;
   border: 1px solid var(--border);
 }
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.danger-btn {
+  background: #fff;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+}
+.danger-btn:hover:not(:disabled) { background: #fef2f2; }
 
 /* Tables */
 .provider-list {

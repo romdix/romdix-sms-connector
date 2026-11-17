@@ -23,6 +23,10 @@ All variables below must be set in Coolify's **Environment Variables** section (
 | `GHL_API_DOMAIN` | ✅ Yes | Always set to `https://services.leadconnectorhq.com` |
 | `JWT_SECRET` | ✅ Yes | A private random key for signing session tokens |
 | `PORT` | Optional | Port the server listens on (defaults to `3000`) |
+| `GHL_CONVERSATION_PROVIDER_ID` | Optional | Conversation Provider ID from your Marketplace app. Required for inbound SMS (`/api/inbound`). |
+| `INBOUND_WEBHOOK_TOKEN` | Optional | Shared secret the SMS provider sends as `x-webhook-token` on `/api/inbound` and `/api/dlr`. |
+| `ADMIN_TOKEN` | Optional | When set, enables `/api/debug/locations` (sent as `x-admin-token`). Leave unset in production. |
+| `GHL_WEBHOOK_PUBLIC_KEY` | Optional | Overrides the HighLevel Ed25519 webhook public key. Only for local testing. |
 
 ---
 
