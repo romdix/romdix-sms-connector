@@ -127,6 +127,23 @@ export async function lookupContactByPhone(
   return contact?.id ? { id: contact.id } : null;
 }
 
+/** POST /contacts — used when a reply arrives from an unknown number. */
+export async function createContact(
+  locationId: string,
+  phone: string,
+  firstName = 'SMS Contact'
+): Promise<{ id: string }> {
+  const data = await request<any>(locationId, 'POST', '/contacts', {
+    locationId,
+    phone,
+    firstName,
+    source: 'SMS Connector',
+  });
+  const id = data?.contact?.id || data?.id;
+  if (!id) throw new GhlApiError('Contact creation returned no id', 500, data);
+  return { id };
+}
+
 /** POST /conversations/messages/inbound */
 export async function addInboundMessage(
   locationId: string,

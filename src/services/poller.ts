@@ -1,6 +1,6 @@
 import { storage } from './storage';
 import { ProviderFactory } from './provider-factory';
-import { addInboundMessage, lookupContactByPhone, updateMessageStatus } from './ghl-api';
+import { addInboundMessage, createContact, lookupContactByPhone, updateMessageStatus } from './ghl-api';
 
 let outboundRunning = false;
 let inboundRunning = false;
@@ -103,10 +103,15 @@ export async function pollInboundOnce(): Promise<void> {
           }
 
           if (!contact) {
-            // Nothing to attach the message to; record it so we do not retry forever.
-            storage.markMessageProcessed(key);
-            console.log('[Inbound] No contact for an incoming number, skipped');
-            continue;
+            // A reply from an unknown number should still appear: create the contact.
+            try {
+              contact = await createContact(locationId, phone);
+              console.log('[Inbound] Created contact for an incoming number');
+            } catch (error: any) {
+              storage.markMessageProcessed(key);
+              console.error('[Inbound] Could not create contact:', error.message);
+              continue;
+            }
           }
 
           try {
