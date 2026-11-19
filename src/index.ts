@@ -8,6 +8,7 @@ import { storage } from "./services/storage";
 import { ProviderFactory } from "./services/provider-factory";
 import { verifyGhlSignature } from "./services/webhook-security";
 import { addInboundMessage, lookupContactByPhone, updateMessageStatus } from "./services/ghl-api";
+import { startPollers } from "./services/poller";
 
 dotenv.config();
 
@@ -268,6 +269,17 @@ app.post("/deliver", async (req: Request, res: Response) => {
     const result = await provider.sendSMS(phone, message, activeProvider.config);
     if (messageId) storage.markMessageProcessed(messageId);
 
+    // Track the provider's message id so the delivery receipt can be polled.
+    const providerMessageId = provider.extractMessageId ? provider.extractMessageId(result) : null;
+    if (messageId && providerMessageId) {
+      storage.saveOutboundMessage({
+        ghl_message_id: messageId,
+        location_id: locationId,
+        provider_id: activeProvider.id,
+        provider_message_id: providerMessageId,
+      });
+    }
+
     // Keep the HighLevel inbox truthful (sent / failed).
     if (messageId) {
       updateMessageStatus(locationId, messageId, "sent").catch((e) =>
@@ -374,4 +386,5 @@ app.get("/", (_req: Request, res: Response) => {
 
 app.listen(PORT, () => {
   console.log(`SMS connector listening on port ${PORT}`);
+  startPollers();
 });

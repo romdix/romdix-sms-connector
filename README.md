@@ -27,6 +27,8 @@ All variables below must be set in Coolify's **Environment Variables** section (
 | `INBOUND_WEBHOOK_TOKEN` | Optional | Shared secret the SMS provider sends as `x-webhook-token` on `/api/inbound` and `/api/dlr`. |
 | `ADMIN_TOKEN` | Optional | When set, enables `/api/debug/locations` (sent as `x-admin-token`). Leave unset in production. |
 | `GHL_WEBHOOK_PUBLIC_KEY` | Optional | Overrides the HighLevel Ed25519 webhook public key. Only for local testing. |
+| `POLLING_ENABLED` | Optional | Set to `false` to disable delivery-receipt and inbound polling. |
+| `POLL_INTERVAL_MS` | Optional | Poll interval in milliseconds (default `45000`). |
 
 ---
 

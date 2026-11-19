@@ -5,6 +5,7 @@ import { SMSProvider } from './sms-provider.interface';
 // Using IP address as fallback for DNS resolution issues in Docker
 const ICOMBD_API_URL = 'http://api.icombd.com/api/v1/campaigns/sendsms/plain';
 const ICOMBD_API_URL_IP = 'http://63.142.254.221/api/v1/campaigns/sendsms/plain';
+const ICOMBD_API_URL_BASE = 'https://api.icombd.com';
 
 export class IcombdProvider implements SMSProvider {
     async sendSMS(to: string, message: string, config: any) {
@@ -19,6 +20,9 @@ export class IcombdProvider implements SMSProvider {
         params.append('sender', config.senderId);
         params.append('to', to);
         params.append('message', message);
+        // The plain endpoint is documented with "text" in some examples and
+        // "message" in others; send both so either parser accepts it.
+        params.append('text', message);
 
         const requestConfig = {
             headers: {
@@ -109,5 +113,51 @@ export class IcombdProvider implements SMSProvider {
             }
             throw new Error(error.message || 'Connection check failed.');
         }
+    }
+
+    extractMessageId(result: any): string | null {
+        const id = result && (result.apiMessageId || result.Message_ID || result.messageId);
+        return id ? String(id) : null;
+    }
+
+    async getStatus(messageId: string, config: any): Promise<'sent' | 'delivered' | 'failed' | 'pending'> {
+        if (!config.user || !config.pass) throw new Error('Icombd credentials missing.');
+        const response = await axios.get(`${ICOMBD_API_URL_BASE}/api/v1/message-logs/get-report`, {
+            params: { username: config.user, password: config.pass, messageId },
+            timeout: 15000,
+        });
+        const entry = response.data && response.data.list && response.data.list[0];
+        const status = String((entry && entry.status) || '').toUpperCase();
+        // Check failures before "DELIVERED" because "UNDELIVERED" contains it.
+        if (/UNDELIV|REJECT|EXPIR|FAIL/.test(status)) return 'failed';
+        if (status.includes('DELIVERED')) return 'delivered';
+        if (!status && String(response.data && response.data.status).toUpperCase() === 'COMPLETED' && entry && entry.status_code === 1) {
+            return 'delivered';
+        }
+        return 'pending';
+    }
+
+    async pullInbound(config: any): Promise<Array<{ id: string; from: string; to?: string; message: string; receivedAt?: string }>> {
+        if (!config.user || !config.pass) return [];
+        const response = await axios.get(`${ICOMBD_API_URL_BASE}/api/v1/sms-inbox/pull`, {
+            params: {
+                username: config.user,
+                password: config.pass,
+                unreadOnly: true,
+                limit: 100,
+                autoMarkRead: true,
+            },
+            timeout: 20000,
+        });
+        const messages = response.data && Array.isArray(response.data.messages) ? response.data.messages : [];
+        return messages
+            .filter((m: any) => m && m.message)
+            .map((m: any) => ({
+                id: String(m.id || m.externalId || ''),
+                from: String(m.from || ''),
+                to: m.to ? String(m.to) : undefined,
+                message: String(m.message),
+                receivedAt: m.receivedAt,
+            }));
     }
 }

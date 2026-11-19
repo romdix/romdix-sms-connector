@@ -41,6 +41,15 @@ db.exec(`
     message_id TEXT PRIMARY KEY,
     created_at INTEGER DEFAULT (strftime('%s', 'now'))
   );
+  CREATE TABLE IF NOT EXISTS outbound_messages (
+    ghl_message_id TEXT PRIMARY KEY,
+    location_id TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    provider_message_id TEXT NOT NULL,
+    last_status TEXT,
+    attempts INTEGER DEFAULT 0,
+    updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+  );
 `);
 
 console.log('[Storage] SQLite DB initialized:', DB_PATH);
@@ -100,6 +109,15 @@ export interface InstallationRecord {
   companyId?: string;
   locationId?: string;
   expires_at?: number;
+}
+
+export interface OutboundRecord {
+  ghl_message_id: string;
+  location_id: string;
+  provider_id: string;
+  provider_message_id: string;
+  last_status?: string | null;
+  attempts?: number;
 }
 
 // Provider credentials that must never be returned to a browser.
@@ -239,6 +257,43 @@ export const storage = {
 
   markMessageProcessed: (messageId: string) => {
     db.prepare('INSERT OR IGNORE INTO processed_messages (message_id) VALUES (?)').run(messageId);
+  },
+
+  /** Track an outbound message so its delivery receipt can be polled. */
+  saveOutboundMessage: (record: OutboundRecord) => {
+    db.prepare(`
+      INSERT INTO outbound_messages (ghl_message_id, location_id, provider_id, provider_message_id, last_status, attempts, updated_at)
+      VALUES (?, ?, ?, ?, NULL, 0, strftime('%s', 'now'))
+      ON CONFLICT(ghl_message_id) DO UPDATE SET
+        location_id = excluded.location_id,
+        provider_id = excluded.provider_id,
+        provider_message_id = excluded.provider_message_id,
+        last_status = NULL,
+        attempts = 0,
+        updated_at = excluded.updated_at
+    `).run(record.ghl_message_id, record.location_id, record.provider_id, record.provider_message_id);
+  },
+
+  listPendingOutboundMessages: (limit = 25): OutboundRecord[] => {
+    return db.prepare(`
+      SELECT * FROM outbound_messages
+      WHERE (last_status IS NULL OR last_status NOT IN ('delivered', 'failed'))
+        AND attempts < 120
+      ORDER BY updated_at ASC
+      LIMIT ?
+    `).all(limit) as OutboundRecord[];
+  },
+
+  updateOutboundMessage: (ghlMessageId: string, status: string) => {
+    db.prepare(`
+      UPDATE outbound_messages
+      SET last_status = ?, attempts = attempts + 1, updated_at = strftime('%s', 'now')
+      WHERE ghl_message_id = ?
+    `).run(status, ghlMessageId);
+  },
+
+  deleteOutboundMessage: (ghlMessageId: string) => {
+    db.prepare('DELETE FROM outbound_messages WHERE ghl_message_id = ?').run(ghlMessageId);
   },
 
   saveLocationMapping: (companyId: string, locationId: string) => {

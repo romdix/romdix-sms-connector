@@ -7,6 +7,8 @@ const REVESMS_API_URL = 'https://smpp.revesms.com:7790/sendtext';
 const REVESMS_API_URL_HTTP = 'http://smpp.revesms.com:7788/sendtext';
 // IP fallback (White Level)
 const REVESMS_API_URL_IP = 'http://103.177.125.106:7788/sendtext';
+// Delivery status endpoint
+const REVESMS_STATUS_URL = 'https://smpp.revesms.com:7790/getstatus';
 
 export class ReveSmsProvider implements SMSProvider {
     async sendSMS(to: string, message: string, config: any) {
@@ -119,5 +121,24 @@ export class ReveSmsProvider implements SMSProvider {
                 }
             }
         }
+    }
+
+    extractMessageId(result: any): string | null {
+        const id = result && (result.Message_ID || result.messageId || result.apiMessageId);
+        return id ? String(id) : null;
+    }
+
+    async getStatus(messageId: string, config: any): Promise<'sent' | 'delivered' | 'failed' | 'pending'> {
+        if (!config.apikey || !config.secretkey) throw new Error('Reve SMS credentials missing.');
+        const response = await axios.get(REVESMS_STATUS_URL, {
+            params: { apikey: config.apikey, secretkey: config.secretkey, messageid: messageId },
+            timeout: 15000,
+        });
+        const text = String((response.data && response.data.Text) || '').toUpperCase();
+        // Check failures before "DELIVERED" because "UNDELIVERED" contains it.
+        if (/UNDELIV|REJECT|EXPIR|FAIL/.test(text)) return 'failed';
+        if (text.includes('DELIVER')) return 'delivered';
+        if (/SENT|ACCEPT/.test(text)) return 'sent';
+        return 'pending';
     }
 }
