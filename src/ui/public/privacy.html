@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Privacy Policy — Romdix SMS Connector</title>
+    <style>
+      body { font-family: Inter, Helvetica, Arial, sans-serif; color: #111827; line-height: 1.65; margin: 0; background: #f9fafb; }
+      main { max-width: 760px; margin: 0 auto; padding: 48px 24px 64px; background: #fff; }
+      h1 { font-size: 28px; margin: 0 0 8px; }
+      h2 { font-size: 18px; margin: 32px 0 8px; }
+      p, li { font-size: 15px; color: #374151; }
+      .muted { color: #6b7280; font-size: 13px; }
+      ul { padding-left: 20px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Privacy Policy</h1>
+      <p class="muted">Romdix SMS Connector — last updated 17 November 2026</p>
+
+      <p>
+        Romdix SMS Connector ("the App") connects a CRM sub-account to an SMS
+        provider so that messages can be sent, delivery status can be reported,
+        and replies can be shown inside the CRM. This policy explains what we
+        store and why.
+      </p>
+
+      <h2>Data we collect</h2>
+      <ul>
+        <li>The sub-account (location) identifier provided by the CRM platform when the App is installed.</li>
+        <li>OAuth access and refresh tokens issued by the CRM platform for that sub-account.</li>
+        <li>SMS provider credentials you enter: username/password or API key/secret and sender ID.</li>
+        <li>Message metadata needed for delivery tracking: message identifiers, recipient number and delivery status.</li>
+        <li>Inbound message content, when your SMS provider supports two-way messaging and it is enabled on your account.</li>
+      </ul>
+
+      <h2>Why we collect it</h2>
+      <ul>
+        <li>To authenticate your settings page inside the CRM.</li>
+        <li>To send messages through your own SMS provider account.</li>
+        <li>To update message delivery status and display replies in your CRM conversations.</li>
+      </ul>
+
+      <h2>How it is stored and protected</h2>
+      <p>
+        Data is stored in a private database on our server. Provider credentials
+        and platform tokens are encrypted at rest, and all traffic uses HTTPS.
+        Secrets are never sent back to the browser after they are saved.
+      </p>
+
+      <h2>Sharing</h2>
+      <p>
+        We do not sell data. Data is shared only with the services required to
+        operate the App: your SMS provider (to deliver messages and retrieve
+        status/replies) and the CRM platform's API (to report status and add
+        inbound messages).
+      </p>
+
+      <h2>Retention and deletion</h2>
+      <p>
+        Data is kept while the App is installed. Using the App's Disconnect
+        action, or uninstalling the App, deletes the stored credentials and
+        tokens for that sub-account. You can also request deletion by email.
+      </p>
+
+      <h2>Cookies and tracking</h2>
+      <p>
+        The App does not use advertising cookies or third-party analytics. A
+        short-lived session token is kept in memory in your browser to authorise
+        settings requests.
+      </p>
+
+      <h2>Contact</h2>
+      <p>
+        Questions or deletion requests: <a href="mailto:support@romdix.com">support@romdix.com</a>
+      </p>
+    </main>
+  </body>
+</html>

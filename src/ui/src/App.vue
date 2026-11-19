@@ -92,9 +92,12 @@
            <div class="form-group">
             <label>SMS Provider Type</label>
             <select v-model="modalSettings.type" :disabled="editingProviderId">
-                <option value="icombd">Icombd (Bangladesh)</option>
-                <option value="revesms">Reve SMS (Bangladesh)</option>
+                <option value="icombd">Icombd — two-way SMS (inbox must be enabled)</option>
+                <option value="revesms">Reve SMS — outbound + delivery reports</option>
             </select>
+            <small v-if="modalSettings.type === 'revesms'" style="display:block; margin-top:6px; color:#6b7280;">
+              Reve does not return replies. Use Icombd if you need two-way conversations.
+            </small>
            </div>
            
            <div class="form-group">
