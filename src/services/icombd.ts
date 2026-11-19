@@ -6,6 +6,7 @@ import { SMSProvider } from './sms-provider.interface';
 const ICOMBD_API_URL = 'http://api.icombd.com/api/v1/campaigns/sendsms/plain';
 const ICOMBD_API_URL_IP = 'http://63.142.254.221/api/v1/campaigns/sendsms/plain';
 const ICOMBD_API_URL_BASE = 'https://api.icombd.com';
+const ICOMBD_API_URL_BASE_IP = 'http://63.142.254.221';
 
 export class IcombdProvider implements SMSProvider {
     async sendSMS(to: string, message: string, config: any) {
@@ -120,11 +121,25 @@ export class IcombdProvider implements SMSProvider {
         return id ? String(id) : null;
     }
 
+    /** Docker DNS sometimes fails for api.icombd.com; retry against the IP. */
+    private async getWithFallback(path: string, params: Record<string, any>) {
+        try {
+            return await axios.get(`${ICOMBD_API_URL_BASE}${path}`, { params, timeout: 20000 });
+        } catch (error: any) {
+            if (error.code === 'EAI_AGAIN' || error.code === 'ENOTFOUND') {
+                console.log('DNS failed, retrying with IP address...');
+                return await axios.get(`${ICOMBD_API_URL_BASE_IP}${path}`, { params, timeout: 20000 });
+            }
+            throw error;
+        }
+    }
+
     async getStatus(messageId: string, config: any): Promise<'sent' | 'delivered' | 'failed' | 'pending'> {
         if (!config.user || !config.pass) throw new Error('Icombd credentials missing.');
-        const response = await axios.get(`${ICOMBD_API_URL_BASE}/api/v1/message-logs/get-report`, {
-            params: { username: config.user, password: config.pass, messageId },
-            timeout: 15000,
+        const response = await this.getWithFallback('/api/v1/message-logs/get-report', {
+            username: config.user,
+            password: config.pass,
+            messageId,
         });
         const entry = response.data && response.data.list && response.data.list[0];
         const status = String((entry && entry.status) || '').toUpperCase();
@@ -139,15 +154,12 @@ export class IcombdProvider implements SMSProvider {
 
     async pullInbound(config: any): Promise<Array<{ id: string; from: string; to?: string; message: string; receivedAt?: string }>> {
         if (!config.user || !config.pass) return [];
-        const response = await axios.get(`${ICOMBD_API_URL_BASE}/api/v1/sms-inbox/pull`, {
-            params: {
-                username: config.user,
-                password: config.pass,
-                unreadOnly: true,
-                limit: 100,
-                autoMarkRead: true,
-            },
-            timeout: 20000,
+        const response = await this.getWithFallback('/api/v1/sms-inbox/pull', {
+            username: config.user,
+            password: config.pass,
+            unreadOnly: true,
+            limit: 100,
+            autoMarkRead: true,
         });
         const messages = response.data && Array.isArray(response.data.messages) ? response.data.messages : [];
         return messages
