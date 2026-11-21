@@ -1,5 +1,6 @@
 import path from 'path';
 import fs from 'fs';
+import crypto from 'node:crypto';
 import Database from 'better-sqlite3';
 import CryptoJS from 'crypto-js';
 import dotenv from 'dotenv';
@@ -49,6 +50,10 @@ db.exec(`
     last_status TEXT,
     attempts INTEGER DEFAULT 0,
     updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+  );
+  CREATE TABLE IF NOT EXISTS location_keys (
+    location_id TEXT PRIMARY KEY,
+    inbound_key TEXT UNIQUE NOT NULL
   );
 `);
 
@@ -340,5 +345,27 @@ export const storage = {
       .prepare('SELECT * FROM outbound_messages WHERE provider_message_id = ? LIMIT 1')
       .get(providerMessageId) as OutboundRecord | undefined;
     return row || null;
+  },
+
+  /** Per-sub-account secret used in the Reve inbound push URL. */
+  getOrCreateInboundKey: (locationId: string): string => {
+    const existing = db
+      .prepare('SELECT inbound_key FROM location_keys WHERE location_id = ?')
+      .get(locationId) as { inbound_key: string } | undefined;
+    if (existing?.inbound_key) return existing.inbound_key;
+
+    const key = crypto.randomBytes(24).toString('hex');
+    db.prepare(`
+      INSERT INTO location_keys (location_id, inbound_key) VALUES (?, ?)
+      ON CONFLICT(location_id) DO UPDATE SET inbound_key = excluded.inbound_key
+    `).run(locationId, key);
+    return key;
+  },
+
+  getLocationByInboundKey: (key: string): string | null => {
+    const row = db
+      .prepare('SELECT location_id FROM location_keys WHERE inbound_key = ?')
+      .get(key) as { location_id: string } | undefined;
+    return row?.location_id || null;
   },
 };

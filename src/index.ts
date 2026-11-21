@@ -187,7 +187,10 @@ app.post("/api/auth/sso", rateLimit(30, 60_000), async (req: Request, res: Respo
 app.get("/api/settings", authenticateRequest, (req: AuthedRequest, res: Response) => {
   const locationId = req.locationId!;
   const creds = storage.getCredentials(locationId);
-  res.json(creds || { defaultProviderId: "", providers: [] });
+  res.json({
+    ...(creds || { defaultProviderId: "", providers: [] }),
+    inboundKey: storage.getOrCreateInboundKey(locationId),
+  });
 });
 
 app.post("/api/settings", authenticateRequest, (req: AuthedRequest, res: Response) => {
@@ -387,16 +390,6 @@ app.post("/api/dlr", providerWebhookGuard, async (req: Request, res: Response) =
 const recentReveInbound = new Map<string, number>();
 
 app.post("/api/inbound/reve", rateLimit(120, 60_000), async (req: Request, res: Response) => {
-  const expected = process.env.INBOUND_WEBHOOK_TOKEN;
-  if (!expected) {
-    return res.status(503).json({ error: "Inbound webhook is not configured." });
-  }
-  const token = req.header("x-webhook-token") || String(req.query.token || "");
-  const authorized =
-    token.length === expected.length &&
-    crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expected));
-  if (!authorized) return res.status(401).json({ error: "Unauthorized." });
-
   const { sender, receiver, message } = req.body || {};
   if (!sender || !receiver || !message) {
     return res.status(400).json({ error: "sender, receiver and message are required." });
@@ -404,12 +397,40 @@ app.post("/api/inbound/reve", rateLimit(120, 60_000), async (req: Request, res: 
 
   const digits = (value: any) => String(value || "").replace(/[^0-9]/g, "");
   const receiverDigits = digits(receiver);
-  const matches = storage
-    .listConfiguredProviders("revesms")
-    .filter((item) => digits(item.provider.config?.callerID) === receiverDigits);
-  if (matches.length === 0) {
-    console.warn("[Inbound] Reve message for an unconfigured receiver number");
-    return res.status(404).json({ error: "No sub-account configured for this receiver number." });
+
+  // Preferred: a per-sub-account key, so one customer can never post into another's account.
+  const pushKey = String(req.query.key || req.header("x-inbound-key") || "");
+  let matches: Array<{ locationId: string; provider: any }> = [];
+
+  if (pushKey) {
+    const locationId = storage.getLocationByInboundKey(pushKey);
+    if (!locationId) return res.status(401).json({ error: "Unauthorized." });
+    const creds = storage.getCredentialsRaw(locationId);
+    matches = (creds?.providers || [])
+      .filter((provider) => provider.type === "revesms")
+      .map((provider) => ({ locationId, provider }));
+    if (matches.length === 0) {
+      return res.status(404).json({ error: "No Reve provider configured for this sub-account." });
+    }
+  } else {
+    // Legacy: shared token + receiver-number match.
+    const expected = process.env.INBOUND_WEBHOOK_TOKEN;
+    if (!expected) {
+      return res.status(503).json({ error: "Inbound webhook is not configured." });
+    }
+    const token = req.header("x-webhook-token") || String(req.query.token || "");
+    const authorized =
+      token.length === expected.length &&
+      crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expected));
+    if (!authorized) return res.status(401).json({ error: "Unauthorized." });
+
+    matches = storage
+      .listConfiguredProviders("revesms")
+      .filter((item) => digits(item.provider.config?.callerID) === receiverDigits);
+    if (matches.length === 0) {
+      console.warn("[Inbound] Reve message for an unconfigured receiver number");
+      return res.status(404).json({ error: "No sub-account configured for this receiver number." });
+    }
   }
 
   // Reve sends no message id and may retry, so suppress identical repeats for 2 minutes.

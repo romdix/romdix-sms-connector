@@ -73,6 +73,14 @@
                {{ saving ? 'Saving...' : 'Save Settings' }}
              </button>
            </div>
+
+           <div v-if="hasReveProvider && inboundKey" class="inbound-box">
+             <strong>Reve inbound push URL</strong>
+             <p>Give this URL to Reve support so replies are delivered to this sub-account:</p>
+             <code class="inbound-url">{{ reveInboundUrl }}</code>
+             <button @click="copyInboundUrl" class="test-btn">{{ copied ? 'Copied' : 'Copy' }}</button>
+           </div>
+
            <div v-if="message" :class="['message', error ? 'error' : 'success']">
              {{ message }}
            </div>
@@ -164,6 +172,8 @@ export default {
       manualIdInput: '',
       sessionToken: null,   // JWT session token from SSO exchange
       ssoError: null,       // Error message if SSO auth fails
+      inboundKey: null,     // Per-sub-account key for the Reve inbound push URL
+      copied: false,
       
       // Main state
       providers: [],
@@ -187,6 +197,14 @@ export default {
       error: false,
       modalMessage: '',
       modalError: false
+    }
+  },
+  computed: {
+    hasReveProvider() {
+      return (this.providers || []).some((p) => p.type === 'revesms');
+    },
+    reveInboundUrl() {
+      return `${window.location.origin}/api/inbound/reve?key=${this.inboundKey}`;
     }
   },
   mounted() {
@@ -321,6 +339,7 @@ export default {
         const data = await res.json();
         this.providers = data.providers || [];
         this.defaultProviderId = data.defaultProviderId || '';
+        this.inboundKey = data.inboundKey || null;
         if (this.providers.length === 1 && !this.defaultProviderId) {
           this.defaultProviderId = this.providers[0].id;
         }
@@ -421,6 +440,15 @@ export default {
     secretPlaceholder(field, fallback) {
       const saved = Array.isArray(this.modalSettings.config.secretsSet) && this.modalSettings.config.secretsSet.includes(field);
       return saved ? 'Saved — leave blank to keep' : fallback;
+    },
+    copyInboundUrl() {
+      const url = this.reveInboundUrl;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(() => {
+          this.copied = true;
+          setTimeout(() => { this.copied = false; }, 2000);
+        });
+      }
     },
     async disconnect() {
       if (!confirm('Disconnect this sub-account? Saved provider credentials will be deleted.')) return;
@@ -613,6 +641,25 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   color: var(--danger);
 }
 .danger-btn:hover:not(:disabled) { background: #fef2f2; }
+
+.inbound-box {
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f9fafb;
+}
+.inbound-box p { margin: 6px 0; font-size: 13px; color: var(--text-muted); }
+.inbound-url {
+  display: block;
+  margin: 8px 0;
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  word-break: break-all;
+}
 
 /* Tables */
 .provider-list {
