@@ -81,6 +81,33 @@
              <button @click="copyInboundUrl" class="test-btn">{{ copied ? 'Copied' : 'Copy' }}</button>
            </div>
 
+           <div v-if="providers.length > 0" class="help-box">
+             <button type="button" class="link-btn" @click="showHelp = !showHelp">
+               {{ showHelp ? 'Hide setup help' : 'How to enable two-way replies' }}
+             </button>
+             <div v-if="showHelp" class="help-body">
+               <h4>Icombd</h4>
+               <p>
+                 Replies work automatically once Icombd enables the <strong>SMS Inbox</strong> feature on your
+                 account. Ask Icombd support to enable it — the app then checks your inbox every 45 seconds.
+                 No URL or extra setup is needed.
+               </p>
+               <h4>Reve SMS</h4>
+               <ol>
+                 <li>Save your Reve API key, secret key and caller ID above.</li>
+                 <li>Copy the <strong>Reve inbound push URL</strong> shown above.</li>
+                 <li>Send that URL to Reve support and ask them to push inbound SMS for your sender ID to it.</li>
+                 <li>Reply from a phone to test — the message appears in Conversations.</li>
+               </ol>
+               <p class="muted">
+                 Reve configures the push on their side for each account; the app cannot do it for you. If your
+                 Reve account is managed by a reseller, ask the reseller to configure it.
+               </p>
+               <h4>Delivery status</h4>
+               <p>Sent / delivered / failed status works for both providers automatically.</p>
+             </div>
+           </div>
+
            <div v-if="message" :class="['message', error ? 'error' : 'success']">
              {{ message }}
            </div>
@@ -174,6 +201,7 @@ export default {
       ssoError: null,       // Error message if SSO auth fails
       inboundKey: null,     // Per-sub-account key for the Reve inbound push URL
       copied: false,
+      showHelp: false,
       
       // Main state
       providers: [],
@@ -660,6 +688,21 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   font-size: 12px;
   word-break: break-all;
 }
+
+.help-box { margin-top: 18px; }
+.help-body {
+  margin-top: 10px;
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 14px;
+  color: #374151;
+}
+.help-body h4 { margin: 14px 0 4px; font-size: 14px; }
+.help-body p { margin: 4px 0; }
+.help-body ol { padding-left: 20px; margin: 4px 0; }
+.help-body .muted { color: #6b7280; font-size: 13px; }
 
 /* Tables */
 .provider-list {
