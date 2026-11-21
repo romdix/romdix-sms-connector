@@ -7,7 +7,7 @@ import { GHL } from "./ghl";
 import { storage } from "./services/storage";
 import { ProviderFactory } from "./services/provider-factory";
 import { verifyGhlSignature } from "./services/webhook-security";
-import { addInboundMessage, lookupContactByPhone, updateMessageStatus } from "./services/ghl-api";
+import { addInboundMessage, createContact, lookupContactByPhone, updateMessageStatus } from "./services/ghl-api";
 import { startPollers } from "./services/poller";
 
 dotenv.config();
@@ -380,6 +380,64 @@ app.post("/api/dlr", providerWebhookGuard, async (req: Request, res: Response) =
     console.error("[DLR] Status update failed:", e.message);
     res.status(502).json({ error: "Could not update the message status." });
   }
+});
+
+// --- Inbound SMS pushed by Reve ---
+// Reve does not expose an inbox API; they POST { sender, receiver, message } to a URL we give them.
+const recentReveInbound = new Map<string, number>();
+
+app.post("/api/inbound/reve", rateLimit(120, 60_000), async (req: Request, res: Response) => {
+  const expected = process.env.INBOUND_WEBHOOK_TOKEN;
+  if (!expected) {
+    return res.status(503).json({ error: "Inbound webhook is not configured." });
+  }
+  const token = req.header("x-webhook-token") || String(req.query.token || "");
+  const authorized =
+    token.length === expected.length &&
+    crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expected));
+  if (!authorized) return res.status(401).json({ error: "Unauthorized." });
+
+  const { sender, receiver, message } = req.body || {};
+  if (!sender || !receiver || !message) {
+    return res.status(400).json({ error: "sender, receiver and message are required." });
+  }
+
+  const digits = (value: any) => String(value || "").replace(/[^0-9]/g, "");
+  const receiverDigits = digits(receiver);
+  const matches = storage
+    .listConfiguredProviders("revesms")
+    .filter((item) => digits(item.provider.config?.callerID) === receiverDigits);
+  if (matches.length === 0) {
+    console.warn("[Inbound] Reve message for an unconfigured receiver number");
+    return res.status(404).json({ error: "No sub-account configured for this receiver number." });
+  }
+
+  // Reve sends no message id and may retry, so suppress identical repeats for 2 minutes.
+  const key = `reve:${digits(sender)}:${receiverDigits}:${String(message).slice(0, 64)}`;
+  const seenAt = recentReveInbound.get(key);
+  if (seenAt && Date.now() - seenAt < 120_000) {
+    return res.json({ success: true, duplicate: true });
+  }
+
+  const phone = `+${digits(sender)}`;
+  for (const match of matches) {
+    try {
+      let contact = await lookupContactByPhone(match.locationId, phone);
+      if (!contact) contact = await createContact(match.locationId, phone);
+      await addInboundMessage(match.locationId, { contactId: contact.id, message: String(message) });
+      recentReveInbound.set(key, Date.now());
+      if (recentReveInbound.size > 500) {
+        const cutoff = Date.now() - 120_000;
+        for (const [k, v] of recentReveInbound) if (v < cutoff) recentReveInbound.delete(k);
+      }
+      console.log("[Inbound] Reve message added for location:", match.locationId);
+      return res.json({ success: true });
+    } catch (error: any) {
+      console.error("[Inbound] Reve add failed:", error.message);
+    }
+  }
+
+  return res.status(502).json({ error: "Could not add the inbound message." });
 });
 
 // --- Delivery receipts (Reve push) ---

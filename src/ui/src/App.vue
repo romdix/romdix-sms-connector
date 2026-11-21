@@ -96,7 +96,7 @@
                 <option value="revesms">Reve SMS — outbound + delivery reports</option>
             </select>
             <small v-if="modalSettings.type === 'revesms'" style="display:block; margin-top:6px; color:#6b7280;">
-              Reve does not return replies. Use Icombd if you need two-way conversations.
+              Reve returns replies only after Reve enables inbound push to this app — ask Reve support.
             </small>
            </div>
            

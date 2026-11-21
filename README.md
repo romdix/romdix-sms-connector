@@ -40,6 +40,17 @@ GET/POST https://your-domain/api/dlr/reve?apikey=YOUR_API_KEY&secretkey=YOUR_SEC
 
 Icombd replies and delivery receipts are polled automatically — no callback needed.
 
+Reve pushes inbound SMS to:
+
+```
+POST https://your-domain/api/inbound/reve?token=INBOUND_WEBHOOK_TOKEN
+Content-Type: application/json
+
+{"sender": "8801XXXXXXXXX", "receiver": "88096XXXXXXX", "message": "text"}
+```
+
+`receiver` must match the caller ID saved for that sub-account.
+
 ---
 
 ### How to Obtain Each Variable
