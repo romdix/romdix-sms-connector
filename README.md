@@ -30,6 +30,16 @@ All variables below must be set in Coolify's **Environment Variables** section (
 | `POLLING_ENABLED` | Optional | Set to `false` to disable delivery-receipt and inbound polling. |
 | `POLL_INTERVAL_MS` | Optional | Poll interval in milliseconds (default `45000`). |
 
+### Provider callbacks
+
+Reve can push delivery receipts instead of being polled. Configure it in Reve with:
+
+```
+GET/POST https://your-domain/api/dlr/reve?apikey=YOUR_API_KEY&secretkey=YOUR_SECRET&status=REPLACE_STATUS&text=REPLACE_TEXT&messageid=REPLACE_ID
+```
+
+Icombd replies and delivery receipts are polled automatically — no callback needed.
+
 ---
 
 ### How to Obtain Each Variable

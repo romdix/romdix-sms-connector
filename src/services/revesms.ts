@@ -135,9 +135,10 @@ export class ReveSmsProvider implements SMSProvider {
             timeout: 15000,
         });
         const text = String((response.data && response.data.Text) || '').toUpperCase();
-        // Check failures before "DELIVERED" because "UNDELIVERED" contains it.
+        // Check failures before success: "UNDELIVRD" also contains "DELIVR".
         if (/UNDELIV|REJECT|EXPIR|FAIL/.test(text)) return 'failed';
-        if (text.includes('DELIVER')) return 'delivered';
+        // Reve returns DELIVRD (no E) for delivered.
+        if (/DELIVRD|DELIVERED/.test(text)) return 'delivered';
         if (/SENT|ACCEPT/.test(text)) return 'sent';
         return 'pending';
     }

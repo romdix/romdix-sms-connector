@@ -37,6 +37,9 @@ app.use(
     },
   })
 );
+// HighLevel webhooks are JSON; provider callbacks (DLR push) arrive as form or text.
+app.use(express.urlencoded({ extended: false, limit: "64kb" }));
+app.use(express.text({ type: ["text/*"], limit: "64kb" }));
 
 app.use((_req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -110,6 +113,32 @@ function rateLimit(max: number, windowMs: number) {
     }
     next();
   };
+}
+
+/** Reve pushes DLRs as query params or as "Status:0, Message_ID:1, Text:DELIVRD". */
+function parseKeyValue(input: any): Record<string, string> {
+  if (!input) return {};
+  if (typeof input === "object") {
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(input)) {
+      if (typeof v === "string" || typeof v === "number") out[k.toLowerCase()] = String(v);
+    }
+    return out;
+  }
+  const out: Record<string, string> = {};
+  for (const part of String(input).split(/[\n,;&]+/)) {
+    const match = part.match(/([A-Za-z_]+)\s*[:=]\s*"?([^",]+)"?/);
+    if (match) out[match[1].toLowerCase()] = match[2].trim();
+  }
+  return out;
+}
+
+function mapReveStatus(text: string): "sent" | "delivered" | "failed" | "pending" {
+  const value = String(text || "").toUpperCase();
+  if (/UNDELIV|REJECT|EXPIR|FAIL/.test(value)) return "failed";
+  if (/DELIVRD|DELIVERED/.test(value)) return "delivered";
+  if (/SENT|ACCEPT/.test(value)) return "sent";
+  return "pending";
 }
 
 // --- OAuth install ---
@@ -351,6 +380,60 @@ app.post("/api/dlr", providerWebhookGuard, async (req: Request, res: Response) =
     console.error("[DLR] Status update failed:", e.message);
     res.status(502).json({ error: "Could not update the message status." });
   }
+});
+
+// --- Delivery receipts (Reve push) ---
+// Configure in Reve: https://smsconnector.romdix.com/api/dlr/reve?apikey=...&secretkey=...&status=REPLACE_STATUS&text=REPLACE_TEXT&messageid=REPLACE_ID
+app.all("/api/dlr/reve", rateLimit(120, 60_000), async (req: Request, res: Response) => {
+  const params = { ...parseKeyValue(req.query), ...parseKeyValue(req.body) };
+  const apikey = params.apikey;
+  const secretkey = params.secretkey;
+  const messageId = params.messageid || params.message_id;
+  const rawStatus = params.text || params.status_text || params.status || "";
+
+  if (!apikey || !secretkey || !messageId) {
+    return res.status(400).json({ error: "apikey, secretkey and messageid are required." });
+  }
+
+  const matches = storage
+    .listConfiguredProviders("revesms")
+    .filter((x) => x.provider.config?.apikey === apikey && x.provider.config?.secretkey === secretkey);
+  if (matches.length === 0) {
+    console.warn("[DLR] Unknown Reve credentials");
+    return res.status(401).json({ error: "Unknown credentials." });
+  }
+
+  const record = storage.getOutboundByProviderMessageId(String(messageId));
+  if (!record) {
+    // Status for a message we did not track (e.g. sent before this deploy).
+    return res.json({ ok: true, processed: false });
+  }
+  if (!matches.some((m) => m.locationId === record.location_id)) {
+    return res.status(401).json({ error: "Credentials do not match this message." });
+  }
+
+  const status = mapReveStatus(rawStatus);
+  if (status === "delivered" || status === "failed") {
+    try {
+      await updateMessageStatus(
+        record.location_id,
+        record.ghl_message_id,
+        status,
+        status === "failed"
+          ? { code: "provider_error", type: "provider", message: "Carrier reported the message as undelivered." }
+          : undefined
+      );
+    } catch (e: any) {
+      console.error("[DLR] Status update failed:", e.message);
+      return res.status(502).json({ error: "Could not update the message status." });
+    }
+    storage.deleteOutboundMessage(record.ghl_message_id);
+  } else {
+    storage.updateOutboundMessage(record.ghl_message_id, status);
+  }
+
+  console.log("[DLR] Reve status:", status);
+  res.json({ ok: true, processed: true, status });
 });
 
 // --- HighLevel app webhooks (install / uninstall) ---

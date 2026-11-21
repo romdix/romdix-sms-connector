@@ -320,4 +320,25 @@ export const storage = {
     storage.deleteCredentials(locationId);
     storage.deleteInstallation(locationId);
   },
+
+  /** All configured providers of a type, with their location (used for provider callbacks). */
+  listConfiguredProviders: (type: string): Array<{ locationId: string; provider: ConfiguredProvider }> => {
+    const rows = db.prepare('SELECT location_id FROM locations').all() as { location_id: string }[];
+    const found: Array<{ locationId: string; provider: ConfiguredProvider }> = [];
+    for (const row of rows) {
+      const creds = storage.getCredentialsRaw(row.location_id);
+      for (const provider of creds?.providers || []) {
+        if (provider.type === type) found.push({ locationId: row.location_id, provider });
+      }
+    }
+    return found;
+  },
+
+  /** Look up a tracked outbound message by the provider's message id. */
+  getOutboundByProviderMessageId: (providerMessageId: string): OutboundRecord | null => {
+    const row = db
+      .prepare('SELECT * FROM outbound_messages WHERE provider_message_id = ? LIMIT 1')
+      .get(providerMessageId) as OutboundRecord | undefined;
+    return row || null;
+  },
 };
