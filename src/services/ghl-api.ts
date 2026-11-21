@@ -150,17 +150,27 @@ export async function addInboundMessage(
   payload: { contactId?: string; conversationId?: string; message: string; attachments?: string[]; date?: string }
 ): Promise<{ messageId?: string; conversationId?: string }> {
   const conversationProviderId = process.env.GHL_CONVERSATION_PROVIDER_ID;
-  if (!conversationProviderId) {
-    throw new GhlApiError('GHL_CONVERSATION_PROVIDER_ID is not configured', 500);
-  }
-  return request(locationId, 'POST', '/conversations/messages/inbound', {
+  const body: Record<string, unknown> = {
     type: 'SMS',
-    conversationProviderId,
     direction: 'inbound',
     message: payload.message,
     contactId: payload.contactId,
     conversationId: payload.conversationId,
     attachments: payload.attachments,
     date: payload.date,
-  });
+  };
+  if (conversationProviderId) body.conversationProviderId = conversationProviderId;
+
+  try {
+    return await request(locationId, 'POST', '/conversations/messages/inbound', body);
+  } catch (error: any) {
+    // For the default SMS provider, HighLevel rejects a conversationProviderId.
+    const detail = String(error?.body?.message || error?.message || '');
+    if (conversationProviderId && /conversationProviderId|provider id/i.test(detail)) {
+      console.warn('[GHL] Retrying inbound message without conversationProviderId');
+      delete body.conversationProviderId;
+      return request(locationId, 'POST', '/conversations/messages/inbound', body);
+    }
+    throw error;
+  }
 }

@@ -154,12 +154,14 @@ export class IcombdProvider implements SMSProvider {
 
     async pullInbound(config: any): Promise<Array<{ id: string; from: string; to?: string; message: string; receivedAt?: string }>> {
         if (!config.user || !config.pass) return [];
+        // Do not auto-mark as read: a message is only marked processed after it
+        // was successfully added to HighLevel, so a failed attempt is retried.
         const response = await this.getWithFallback('/api/v1/sms-inbox/pull', {
             username: config.user,
             password: config.pass,
-            unreadOnly: true,
+            unreadOnly: false,
             limit: 100,
-            autoMarkRead: true,
+            autoMarkRead: false,
         });
         const messages = response.data && Array.isArray(response.data.messages) ? response.data.messages : [];
         return messages
