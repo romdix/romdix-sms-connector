@@ -389,22 +389,40 @@ app.post("/api/dlr", providerWebhookGuard, async (req: Request, res: Response) =
 // Reve does not expose an inbox API; they POST { sender, receiver, message } to a URL we give them.
 const recentReveInbound = new Map<string, number>();
 
-app.post("/api/inbound/reve", rateLimit(120, 60_000), async (req: Request, res: Response) => {
-  const { sender, receiver, message } = req.body || {};
+app.all("/api/inbound/reve", rateLimit(120, 60_000), async (req: Request, res: Response) => {
+  // Reve may POST JSON or call with GET query parameters; accept both.
+  const params = { ...parseKeyValue(req.query), ...parseKeyValue(req.body) };
+  const sender = params.sender || params.from || params.msisdn;
+  const receiver = params.receiver || params.to;
+  const message = params.message || params.text || params.body;
+
+  // Preferred: a per-sub-account key, so one customer can never post into another's account.
+  const pushKey = String(params.key || req.header("x-inbound-key") || "");
+  console.log(
+    "[Inbound] Reve push received:",
+    req.method,
+    "| key:",
+    pushKey ? "yes" : "no",
+    "| receiver:",
+    receiver || "none",
+    "| message:",
+    message ? "yes" : "no"
+  );
+
   if (!sender || !receiver || !message) {
     return res.status(400).json({ error: "sender, receiver and message are required." });
   }
 
   const digits = (value: any) => String(value || "").replace(/[^0-9]/g, "");
   const receiverDigits = digits(receiver);
-
-  // Preferred: a per-sub-account key, so one customer can never post into another's account.
-  const pushKey = String(req.query.key || req.header("x-inbound-key") || "");
   let matches: Array<{ locationId: string; provider: any }> = [];
 
   if (pushKey) {
     const locationId = storage.getLocationByInboundKey(pushKey);
-    if (!locationId) return res.status(401).json({ error: "Unauthorized." });
+    if (!locationId) {
+      console.warn("[Inbound] Reve key not recognised");
+      return res.status(401).json({ error: "Unauthorized." });
+    }
     const creds = storage.getCredentialsRaw(locationId);
     matches = (creds?.providers || [])
       .filter((provider) => provider.type === "revesms")
@@ -418,7 +436,7 @@ app.post("/api/inbound/reve", rateLimit(120, 60_000), async (req: Request, res: 
     if (!expected) {
       return res.status(503).json({ error: "Inbound webhook is not configured." });
     }
-    const token = req.header("x-webhook-token") || String(req.query.token || "");
+    const token = req.header("x-webhook-token") || String(params.token || "");
     const authorized =
       token.length === expected.length &&
       crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expected));
