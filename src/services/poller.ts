@@ -145,5 +145,12 @@ export function startPollers(): void {
   setInterval(() => {
     pollInboundOnce().catch((e) => console.error('[Inbound] Loop error:', e.message));
   }, interval).unref();
+  setInterval(() => {
+    try {
+      storage.cleanupOldRecords(30);
+    } catch (e: any) {
+      console.error('[Cleanup] Failed:', e.message);
+    }
+  }, 24 * 60 * 60 * 1000).unref();
   console.log('[Poll] Delivery + inbound polling started every', interval, 'ms');
 }

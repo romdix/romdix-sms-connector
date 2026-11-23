@@ -23,8 +23,9 @@ All variables below must be set in Coolify's **Environment Variables** section (
 | `GHL_API_DOMAIN` | ✅ Yes | Always set to `https://services.leadconnectorhq.com` |
 | `JWT_SECRET` | ✅ Yes | A private random key for signing session tokens |
 | `PORT` | Optional | Port the server listens on (defaults to `3000`) |
-| `GHL_CONVERSATION_PROVIDER_ID` | Optional | Conversation Provider ID from your Marketplace app. Required for inbound SMS (`/api/inbound`). |
-| `INBOUND_WEBHOOK_TOKEN` | Optional | Shared secret the SMS provider sends as `x-webhook-token` on `/api/inbound` and `/api/dlr`. |
+| `GHL_CONVERSATION_PROVIDER_ID` | Optional | Only for custom conversation providers. A default SMS provider must omit it; the app sends it and retries without it if HighLevel rejects it. |
+| `INBOUND_WEBHOOK_TOKEN` | Optional | Legacy shared secret for the token-based inbound path (`x-webhook-token`). Regular Reve inbound uses per-sub-account keys instead. |
+| `INBOUND_RECEIVER_FALLBACK` | Optional | Set to `true` to accept Reve pushes whose key is invalid when the receiver number uniquely matches a sub-account. Off by default. |
 | `ADMIN_TOKEN` | Optional | When set, enables `/api/debug/locations` (sent as `x-admin-token`). Leave unset in production. |
 | `GHL_WEBHOOK_PUBLIC_KEY` | Optional | Overrides the HighLevel Ed25519 webhook public key. Only for local testing. |
 | `POLLING_ENABLED` | Optional | Set to `false` to disable delivery-receipt and inbound polling. |
@@ -43,13 +44,14 @@ Icombd replies and delivery receipts are polled automatically — no callback ne
 Reve pushes inbound SMS to:
 
 ```
-POST https://your-domain/api/inbound/reve?token=INBOUND_WEBHOOK_TOKEN
+POST https://your-domain/api/inbound/reve?key=INBOUND_KEY_SHOWN_IN_THE_APP
 Content-Type: application/json
 
 {"sender": "8801XXXXXXXXX", "receiver": "88096XXXXXXX", "message": "text"}
 ```
 
-`receiver` must match the caller ID saved for that sub-account.
+The URL (with its key) is shown in the app under **Reve inbound push URL**. Each sub-account has
+its own key; the receiver number should be the sender ID that received the reply.
 
 ---
 

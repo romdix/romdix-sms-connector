@@ -8,6 +8,9 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const SECRET_KEY = process.env.GHL_APP_CLIENT_SECRET || 'default_secret_key';
+if (!process.env.GHL_APP_CLIENT_SECRET && process.env.NODE_ENV === 'production') {
+  throw new Error('GHL_APP_CLIENT_SECRET must be set in production: it encrypts stored credentials.');
+}
 const DB_PATH = path.join(process.cwd(), 'data', 'connector.db');
 
 // Ensure data directory exists
@@ -324,6 +327,14 @@ export const storage = {
   deleteLocationData: (locationId: string) => {
     storage.deleteCredentials(locationId);
     storage.deleteInstallation(locationId);
+    db.prepare('DELETE FROM location_keys WHERE location_id = ?').run(locationId);
+  },
+
+  /** Housekeeping: drop old message ids and stale polling rows. */
+  cleanupOldRecords: (days = 30) => {
+    const cutoff = Math.floor(Date.now() / 1000) - days * 86400;
+    db.prepare('DELETE FROM processed_messages WHERE created_at < ?').run(cutoff);
+    db.prepare('DELETE FROM outbound_messages WHERE attempts >= 120 OR updated_at < ?').run(cutoff);
   },
 
   /** All configured providers of a type, with their location (used for provider callbacks). */

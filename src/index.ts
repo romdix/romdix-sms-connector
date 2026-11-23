@@ -44,6 +44,7 @@ app.use(express.text({ type: ["text/*"], limit: "64kb" }));
 app.use((_req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   next();
 });
 
@@ -82,26 +83,17 @@ function adminOnly(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-/** Provider → app callbacks (inbound SMS / delivery receipts) use a shared secret. */
-function providerWebhookGuard(req: Request, res: Response, next: NextFunction) {
-  const expected = process.env.INBOUND_WEBHOOK_TOKEN;
-  if (!expected) {
-    return res.status(503).json({ error: "Inbound webhook is not configured." });
-  }
-  const provided = req.header("x-webhook-token") || "";
-  const ok =
-    provided.length === expected.length &&
-    crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
-  if (!ok) return res.status(401).json({ error: "Unauthorized." });
-  next();
-}
-
 // Small in-memory limiter for endpoints that are cheap to spam.
 const rateBuckets = new Map<string, { count: number; reset: number }>();
 function rateLimit(max: number, windowMs: number) {
   return (req: Request, res: Response, next: NextFunction) => {
     const key = `${req.ip || "unknown"}:${req.path}`;
     const now = Date.now();
+    if (rateBuckets.size > 5000) {
+      for (const [bucketKey, value] of rateBuckets) {
+        if (value.reset < now) rateBuckets.delete(bucketKey);
+      }
+    }
     const bucket = rateBuckets.get(key);
     if (!bucket || now > bucket.reset) {
       rateBuckets.set(key, { count: 1, reset: now + windowMs });
@@ -335,56 +327,6 @@ app.post("/deliver", async (req: Request, res: Response) => {
   }
 });
 
-// --- Inbound SMS (provider → app) ---
-
-app.post("/api/inbound", providerWebhookGuard, async (req: Request, res: Response) => {
-  const { locationId, phone, contactId, message, attachments, date, conversationId } = req.body || {};
-  if (!locationId || !message) {
-    return res.status(400).json({ error: "locationId and message are required." });
-  }
-
-  try {
-    let resolvedContactId = contactId as string | undefined;
-    if (!resolvedContactId && phone) {
-      const contact = await lookupContactByPhone(locationId, String(phone));
-      resolvedContactId = contact?.id;
-    }
-    if (!resolvedContactId && !conversationId) {
-      return res.status(404).json({ error: "No contact found for this phone number." });
-    }
-
-    await addInboundMessage(locationId, {
-      contactId: resolvedContactId,
-      conversationId,
-      message: String(message),
-      attachments: Array.isArray(attachments) ? attachments : undefined,
-      date,
-    });
-    console.log("[Inbound] Message added for location:", locationId);
-    res.json({ success: true });
-  } catch (e: any) {
-    console.error("[Inbound] Failed:", e.message);
-    res.status(502).json({ error: "Could not deliver the inbound message." });
-  }
-});
-
-// --- Delivery receipts (provider → app) ---
-
-app.post("/api/dlr", providerWebhookGuard, async (req: Request, res: Response) => {
-  const { locationId, messageId, status, error } = req.body || {};
-  const allowed = ["sent", "delivered", "read", "failed"];
-  if (!locationId || !messageId || !allowed.includes(status)) {
-    return res.status(400).json({ error: "locationId, messageId and a valid status are required." });
-  }
-  try {
-    await updateMessageStatus(locationId, String(messageId), status, error);
-    res.json({ success: true });
-  } catch (e: any) {
-    console.error("[DLR] Status update failed:", e.message);
-    res.status(502).json({ error: "Could not update the message status." });
-  }
-});
-
 // --- Inbound SMS pushed by Reve ---
 // Reve does not expose an inbox API; they POST { sender, receiver, message } to a URL we give them.
 const recentReveInbound = new Map<string, number>();
@@ -438,7 +380,7 @@ app.all("/api/inbound/reve", rateLimit(120, 60_000), async (req: Request, res: R
       const byReceiver = storage
         .listConfiguredProviders("revesms")
         .filter((item) => digits(item.provider.config?.callerID) === receiverDigits);
-      if (byReceiver.length === 1) {
+      if (process.env.INBOUND_RECEIVER_FALLBACK === "true" && byReceiver.length === 1) {
         const expected = storage.getOrCreateInboundKey(byReceiver[0].locationId);
         const hash = (value: string) => crypto.createHash("sha256").update(value).digest("hex").slice(0, 8);
         console.warn(

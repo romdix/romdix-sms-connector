@@ -1,0 +1,13 @@
+node_modules
+src/ui/node_modules
+dist
+src/ui/dist
+data
+.git
+.gitignore
+.env
+.env.*
+*.log
+.tmp
+encoded_data.json
+README.md

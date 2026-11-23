@@ -288,7 +288,6 @@ export default {
       const data = await res.json();
       this.sessionToken = data.sessionToken;
       if (data.locationId) this.locationId = data.locationId;
-      console.log('[Auth] SSO authenticated, locationId:', this.locationId);
       return true;
     },
     // Gets a session token from the URL token or the GHL iframe handshake.
