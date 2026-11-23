@@ -159,17 +159,20 @@ export async function addInboundMessage(
     attachments: payload.attachments,
     date: payload.date,
   };
-  if (conversationProviderId) body.conversationProviderId = conversationProviderId;
 
+  // Default SMS provider mode: type "SMS" and no conversationProviderId.
   try {
     return await request(locationId, 'POST', '/conversations/messages/inbound', body);
   } catch (error: any) {
-    // For the default SMS provider, HighLevel rejects a conversationProviderId.
+    // Custom conversation provider mode requires type "Custom" plus the provider id.
     const detail = String(error?.body?.message || error?.message || '');
-    if (conversationProviderId && /conversationProviderId|provider id/i.test(detail)) {
-      console.warn('[GHL] Retrying inbound message without conversationProviderId');
-      delete body.conversationProviderId;
-      return request(locationId, 'POST', '/conversations/messages/inbound', body);
+    if (conversationProviderId && /conversationProviderId|provider id|incorrect/i.test(detail)) {
+      console.warn('[GHL] Retrying inbound message as a custom conversation provider');
+      return request(locationId, 'POST', '/conversations/messages/inbound', {
+        ...body,
+        type: 'Custom',
+        conversationProviderId,
+      });
     }
     throw error;
   }
