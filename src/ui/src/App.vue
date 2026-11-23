@@ -88,23 +88,21 @@
              <div v-if="showHelp" class="help-body">
                <h4>Icombd</h4>
                <p>
-                 Replies work automatically once Icombd enables the <strong>SMS Inbox</strong> feature on your
-                 account. Ask Icombd support to enable it — the app then checks your inbox every 45 seconds.
-                 No URL or extra setup is needed.
+                 Replies arrive automatically. Ask Icombd support to enable <strong>SMS Inbox</strong> on your
+                 account — the app then checks for new messages every 25 seconds. No URL is needed.
                </p>
                <h4>Reve SMS</h4>
                <ol>
-                 <li>Save your Reve API key, secret key and caller ID above.</li>
+                 <li>Save your Reve API key, secret key and caller ID.</li>
                  <li>Copy the <strong>Reve inbound push URL</strong> shown above.</li>
-                 <li>Send that URL to Reve support and ask them to push inbound SMS for your sender ID to it.</li>
+                 <li>Send it to Reve support and ask them to push inbound SMS for your sender ID to that URL.</li>
                  <li>Reply from a phone to test — the message appears in Conversations.</li>
                </ol>
                <p class="muted">
-                 Reve configures the push on their side for each account; the app cannot do it for you. If your
-                 Reve account is managed by a reseller, ask the reseller to configure it.
+                 Reve enables the push per account on their side; the app cannot do it for you.
                </p>
                <h4>Delivery status</h4>
-               <p>Sent / delivered / failed status works for both providers automatically.</p>
+               <p>Sent, delivered and failed status updates are automatic for both providers.</p>
              </div>
            </div>
 
@@ -127,12 +125,9 @@
            <div class="form-group">
             <label>SMS Provider Type</label>
             <select v-model="modalSettings.type" :disabled="editingProviderId">
-                <option value="icombd">Icombd — two-way SMS (inbox must be enabled)</option>
-                <option value="revesms">Reve SMS — outbound + delivery reports</option>
+                <option value="icombd">Icombd</option>
+                <option value="revesms">Reve SMS</option>
             </select>
-            <small v-if="modalSettings.type === 'revesms'" style="display:block; margin-top:6px; color:#6b7280;">
-              Reve returns replies only after Reve enables inbound push to this app — ask Reve support.
-            </small>
            </div>
            
            <div class="form-group">
