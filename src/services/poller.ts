@@ -138,13 +138,22 @@ export function startPollers(): void {
     console.log('[Poll] Disabled by POLLING_ENABLED=false');
     return;
   }
-  const interval = Number(process.env.POLL_INTERVAL_MS || 45000);
+  // Guard against bad env values (NaN would turn setInterval into a busy loop).
+  const ms = (value: string | undefined, fallback: number) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed >= 5000 ? Math.floor(parsed) : fallback;
+  };
+  const statusInterval = ms(process.env.POLL_INTERVAL_MS, 45000);
+  const inboundInterval = ms(process.env.INBOUND_POLL_INTERVAL_MS, 25000);
+
   setInterval(() => {
     pollOutboundOnce().catch((e) => console.error('[Status] Loop error:', e.message));
-  }, interval).unref();
+  }, statusInterval).unref();
   setInterval(() => {
     pollInboundOnce().catch((e) => console.error('[Inbound] Loop error:', e.message));
-  }, interval).unref();
+  }, inboundInterval).unref();
+  // Check once immediately so a restart doesn't add a full interval of delay.
+  pollInboundOnce().catch((e) => console.error('[Inbound] Initial poll error:', e.message));
   setInterval(() => {
     try {
       storage.cleanupOldRecords(30);
@@ -152,5 +161,5 @@ export function startPollers(): void {
       console.error('[Cleanup] Failed:', e.message);
     }
   }, 24 * 60 * 60 * 1000).unref();
-  console.log('[Poll] Delivery + inbound polling started every', interval, 'ms');
+  console.log('[Poll] Delivery every', statusInterval, 'ms; inbound every', inboundInterval, 'ms');
 }

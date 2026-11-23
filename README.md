@@ -29,7 +29,8 @@ All variables below must be set in Coolify's **Environment Variables** section (
 | `ADMIN_TOKEN` | Optional | When set, enables `/api/debug/locations` (sent as `x-admin-token`). Leave unset in production. |
 | `GHL_WEBHOOK_PUBLIC_KEY` | Optional | Overrides the HighLevel Ed25519 webhook public key. Only for local testing. |
 | `POLLING_ENABLED` | Optional | Set to `false` to disable delivery-receipt and inbound polling. |
-| `POLL_INTERVAL_MS` | Optional | Poll interval in milliseconds (default `45000`). |
+| `POLL_INTERVAL_MS` | Optional | How often delivery receipts are polled, in ms (default `45000`). |
+| `INBOUND_POLL_INTERVAL_MS` | Optional | How often inbound SMS is pulled from Icombd, in ms (default `25000`, minimum `5000`). |
 
 ### Provider callbacks
 
