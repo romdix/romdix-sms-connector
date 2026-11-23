@@ -419,14 +419,25 @@ app.all("/api/inbound/reve", rateLimit(120, 60_000), async (req: Request, res: R
 
   if (pushKey) {
     const locationId = storage.getLocationByInboundKey(pushKey);
-    if (!locationId) {
-      console.warn("[Inbound] Reve key not recognised");
-      return res.status(401).json({ error: "Unauthorized." });
+    if (locationId) {
+      const creds = storage.getCredentialsRaw(locationId);
+      matches = (creds?.providers || [])
+        .filter((provider) => provider.type === "revesms")
+        .map((provider) => ({ locationId, provider }));
+    } else {
+      // A callback URL copied through chat can lose characters. If the receiving
+      // sender ID uniquely identifies a sub-account, route by it instead of dropping.
+      const byReceiver = storage
+        .listConfiguredProviders("revesms")
+        .filter((item) => digits(item.provider.config?.callerID) === receiverDigits);
+      if (byReceiver.length === 1) {
+        console.warn("[Inbound] Invalid inbound key; routing by receiver number instead");
+        matches = [{ locationId: byReceiver[0].locationId, provider: byReceiver[0].provider }];
+      } else {
+        console.warn("[Inbound] Reve key not recognised");
+        return res.status(401).json({ error: "Unauthorized." });
+      }
     }
-    const creds = storage.getCredentialsRaw(locationId);
-    matches = (creds?.providers || [])
-      .filter((provider) => provider.type === "revesms")
-      .map((provider) => ({ locationId, provider }));
     if (matches.length === 0) {
       return res.status(404).json({ error: "No Reve provider configured for this sub-account." });
     }
