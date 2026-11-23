@@ -323,11 +323,13 @@ export const storage = {
     return rows.map((r) => r.location_id);
   },
 
-  /** Uninstall: drop everything tied to a sub-account. */
+  /** Uninstall: drop credentials and the installation.
+   *  The inbound key is intentionally kept: it routes provider pushes, holds no
+   *  customer data, and changing it on every reinstall would silently break the
+   *  URL customers configured with their SMS provider. */
   deleteLocationData: (locationId: string) => {
     storage.deleteCredentials(locationId);
     storage.deleteInstallation(locationId);
-    db.prepare('DELETE FROM location_keys WHERE location_id = ?').run(locationId);
   },
 
   /** Housekeeping: drop old message ids and stale polling rows. */
@@ -378,5 +380,14 @@ export const storage = {
       .prepare('SELECT location_id FROM location_keys WHERE inbound_key = ?')
       .get(key) as { location_id: string } | undefined;
     return row?.location_id || null;
+  },
+
+  /** Restore or rotate the inbound key for a location (admin/support use). */
+  setInboundKey: (locationId: string, key: string) => {
+    db.prepare('DELETE FROM location_keys WHERE inbound_key = ? AND location_id != ?').run(key, locationId);
+    db.prepare(`
+      INSERT INTO location_keys (location_id, inbound_key) VALUES (?, ?)
+      ON CONFLICT(location_id) DO UPDATE SET inbound_key = excluded.inbound_key
+    `).run(locationId, key);
   },
 };

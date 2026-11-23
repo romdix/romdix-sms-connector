@@ -249,6 +249,25 @@ app.get("/api/debug/locations", adminOnly, (_req: Request, res: Response) => {
   res.json({ locations: storage.getAllConfiguredLocations() });
 });
 
+// --- Admin: restore or rotate a location's inbound key ---
+
+app.get("/api/admin/inbound-key", rateLimit(30, 60_000), adminOnly, (req: Request, res: Response) => {
+  const locationId = String(req.query.locationId || "");
+  if (!locationId) return res.status(400).json({ error: "locationId is required." });
+  res.json({ locationId, key: storage.getOrCreateInboundKey(locationId) });
+});
+
+app.post("/api/admin/inbound-key", rateLimit(10, 60_000), adminOnly, (req: Request, res: Response) => {
+  const { locationId, key } = req.body || {};
+  const normalized = String(key || "").trim().toLowerCase();
+  if (!locationId || !/^[a-f0-9]{32,64}$/.test(normalized)) {
+    return res.status(400).json({ error: "locationId and a 32-64 character hex key are required." });
+  }
+  storage.setInboundKey(String(locationId), normalized);
+  console.log("[Admin] Inbound key set for location:", locationId);
+  res.json({ success: true });
+});
+
 // --- Conversation Provider: outbound delivery ---
 
 app.post("/deliver", async (req: Request, res: Response) => {
