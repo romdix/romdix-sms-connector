@@ -397,7 +397,15 @@ app.all("/api/inbound/reve", rateLimit(120, 60_000), async (req: Request, res: R
   const message = params.message || params.text || params.body;
 
   // Preferred: a per-sub-account key, so one customer can never post into another's account.
-  const pushKey = String(params.key || req.header("x-inbound-key") || "");
+  // Normalise it: chat apps and gateways sometimes pad, URL-encode or upper-case it.
+  const rawKey = String(params.key || req.header("x-inbound-key") || "");
+  let pushKey = rawKey.trim();
+  try {
+    pushKey = decodeURIComponent(pushKey);
+  } catch (e) {
+    /* keep the raw value */
+  }
+  pushKey = pushKey.trim().toLowerCase();
   console.log(
     "[Inbound] Reve push received:",
     req.method,
@@ -431,7 +439,16 @@ app.all("/api/inbound/reve", rateLimit(120, 60_000), async (req: Request, res: R
         .listConfiguredProviders("revesms")
         .filter((item) => digits(item.provider.config?.callerID) === receiverDigits);
       if (byReceiver.length === 1) {
-        console.warn("[Inbound] Invalid inbound key; routing by receiver number instead");
+        const expected = storage.getOrCreateInboundKey(byReceiver[0].locationId);
+        const hash = (value: string) => crypto.createHash("sha256").update(value).digest("hex").slice(0, 8);
+        console.warn(
+          "[Inbound] Invalid inbound key: received",
+          pushKey.length,
+          "chars (hash " + hash(pushKey) + "), expected",
+          expected.length,
+          "chars (hash " + hash(expected) + ")"
+        );
+        console.warn("[Inbound] Routing by receiver number instead");
         matches = [{ locationId: byReceiver[0].locationId, provider: byReceiver[0].provider }];
       } else {
         console.warn("[Inbound] Reve key not recognised");
