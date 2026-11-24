@@ -346,6 +346,76 @@ app.post("/deliver", async (req: Request, res: Response) => {
   }
 });
 
+// --- Workflow action: send SMS without being the default provider ---
+
+const recentWorkflowSends = new Map<string, number>();
+
+app.post("/api/workflow/send-sms", rateLimit(600, 60_000), async (req: Request, res: Response) => {
+  const expected = process.env.WORKFLOW_ACTION_TOKEN;
+  if (!expected) {
+    return res.status(503).json({ error: "The workflow action is not configured." });
+  }
+  const provided = req.header("x-workflow-token") || "";
+  const authorized =
+    provided.length === expected.length &&
+    crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
+  if (!authorized) {
+    console.warn("[Workflow] Rejected request with an invalid token");
+    return res.status(401).json({ error: "Unauthorized." });
+  }
+
+  // HighLevel sends: { data: {fields}, extras: {locationId, contactId, workflowId}, meta: {...} }
+  const { data = {}, extras = {} } = req.body || {};
+  const locationId = String(extras.locationId || data.locationId || "");
+  const phone = String(data.phone || data.to || "").trim();
+  const message = String(data.message || "");
+
+  if (!locationId || !phone || !message) {
+    return res.status(400).json({ error: "locationId, phone and message are required." });
+  }
+  if (message.length > 1600) {
+    return res.status(400).json({ error: "Message is longer than 1600 characters." });
+  }
+
+  // HighLevel retries failed actions; avoid sending the same text twice within a minute.
+  const dedupeKey = `${locationId}:${phone}:${message}`;
+  const now = Date.now();
+  if (recentWorkflowSends.size > 2000) {
+    for (const [key, at] of recentWorkflowSends) if (at < now - 60_000) recentWorkflowSends.delete(key);
+  }
+  const lastSent = recentWorkflowSends.get(dedupeKey);
+  if (lastSent && lastSent > now - 60_000) {
+    console.log("[Workflow] Duplicate send ignored for location:", locationId);
+    return res.json({ success: true, duplicate: true });
+  }
+
+  const creds = storage.getCredentialsRaw(locationId);
+  if (!creds || !Array.isArray(creds.providers) || creds.providers.length === 0) {
+    return res.status(400).json({
+      error: "No SMS provider is configured for this sub-account. Open the app and save your provider first.",
+    });
+  }
+  const activeProvider = creds.providers.find((p) => p.id === creds.defaultProviderId) || creds.providers[0];
+
+  let provider;
+  try {
+    provider = ProviderFactory.getProvider(activeProvider.type);
+  } catch {
+    return res.status(400).json({ error: "Provider is misconfigured." });
+  }
+
+  try {
+    const result = await provider.sendSMS(phone, message, activeProvider.config);
+    recentWorkflowSends.set(dedupeKey, now);
+    const providerMessageId = provider.extractMessageId ? provider.extractMessageId(result) : null;
+    console.log("[Workflow] SMS sent via", activeProvider.type, "for location:", locationId);
+    res.json({ success: true, providerMessageId });
+  } catch (e: any) {
+    console.error("[Workflow] Provider send failed:", e.message);
+    res.status(400).json({ error: "The SMS provider could not deliver this message." });
+  }
+});
+
 // --- Inbound SMS pushed by Reve ---
 // Reve does not expose an inbox API; they POST { sender, receiver, message } to a URL we give them.
 const recentReveInbound = new Map<string, number>();
