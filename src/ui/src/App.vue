@@ -53,7 +53,7 @@
                <tbody>
                  <tr v-for="provider in providers" :key="provider.id" :class="{ 'is-default': defaultProviderId === provider.id }">
                    <td>
-                     <span class="badge">{{ provider.type === 'icombd' ? 'Icombd' : 'Reve SMS' }}</span>
+                     <span class="badge">{{ provider.type === 'icombd' ? 'Icombd' : provider.type === 'zender' ? 'Zender' : 'Reve SMS' }}</span>
                    </td>
                    <td>{{ provider.name }}</td>
                    <td>
@@ -78,7 +78,14 @@
              <strong>Reve inbound push URL</strong>
              <p>Give this URL to Reve support so replies are delivered to this sub-account:</p>
              <code class="inbound-url">{{ reveInboundUrl }}</code>
-             <button @click="copyInboundUrl" class="test-btn">{{ copied ? 'Copied' : 'Copy' }}</button>
+             <button @click="copyUrl(reveInboundUrl, 'reve')" class="test-btn">{{ copiedReve ? 'Copied' : 'Copy' }}</button>
+           </div>
+
+           <div v-if="hasZenderProvider && inboundKey" class="inbound-box">
+             <strong>Zender webhook URL</strong>
+             <p>In Zender (<strong>Developer → Webhooks → New Webhook</strong>), paste this URL and select <code>sms.received</code>, <code>sms.sent</code>, <code>sms.delivered</code>, and <code>sms.failed</code>:</p>
+             <code class="inbound-url">{{ zenderWebhookUrl }}</code>
+             <button @click="copyUrl(zenderWebhookUrl, 'zender')" class="test-btn">{{ copiedZender ? 'Copied' : 'Copy' }}</button>
            </div>
 
            <div v-if="providers.length > 0" class="help-box">
@@ -101,8 +108,15 @@
                <p class="muted">
                  Reve enables the push per account on their side; the app cannot do it for you.
                </p>
+               <h4>Zender</h4>
+               <ol>
+                 <li>In Zender, go to <strong>Developer → API Keys → New Key</strong>, enable <strong>Account</strong> + <strong>SMS</strong> permissions, and paste the key here.</li>
+                 <li>Save the provider, then copy the <strong>Zender webhook URL</strong> shown above.</li>
+                 <li>In Zender, go to <strong>Developer → Webhooks → New Webhook</strong>, paste that URL, and tick <code>sms.received</code>, <code>sms.sent</code>, <code>sms.delivered</code>, and <code>sms.failed</code>.</li>
+                 <li>(Optional) Copy Zender's Signing Secret into the provider's <strong>Webhook Signing Secret</strong> field and save.</li>
+               </ol>
                <h4>Delivery status</h4>
-               <p>Sent, delivered and failed status updates are automatic for both providers.</p>
+               <p>Sent, delivered and failed status updates are automatic for all providers.</p>
              </div>
            </div>
 
@@ -127,6 +141,7 @@
             <select v-model="modalSettings.type" :disabled="editingProviderId">
                 <option value="icombd">Icombd</option>
                 <option value="revesms">Reve SMS</option>
+                <option value="zender">Zender</option>
             </select>
            </div>
            
@@ -166,6 +181,30 @@
                 <input v-model="modalSettings.config.callerID" type="text" placeholder="Caller ID" />
               </div>
            </div>
+
+           <!-- Zender Fields -->
+           <div v-else-if="modalSettings.type === 'zender'">
+               <div class="form-group">
+                 <label>Zender Site URL</label>
+                 <input v-model="modalSettings.config.baseUrl" type="url" placeholder="https://sms.romdix.com" />
+               </div>
+               <div class="form-group">
+                 <label>Zender API Key</label>
+                 <input v-model="modalSettings.config.zenderApiKey" type="password" :placeholder="secretPlaceholder('zenderApiKey', 'API Key from Zender -> Developer -> API Keys')" />
+               </div>
+               <div class="form-group">
+                 <label>Webhook Signing Secret <small style="font-weight:normal; color:#6b7280;">(Optional — from Zender Webhooks)</small></label>
+                 <input v-model="modalSettings.config.zenderWebhookSecret" type="password" :placeholder="secretPlaceholder('zenderWebhookSecret', 'Optional — leave blank if unused')" />
+               </div>
+               <div class="form-group">
+                 <label>Zender Sender ID <small style="font-weight:normal; color:#6b7280;">(Optional numeric ID — leave blank for auto)</small></label>
+                 <input v-model="modalSettings.config.zenderSenderId" type="text" placeholder="Leave blank for Zender default route" />
+               </div>
+               <div class="form-group">
+                 <label>Zender SIM ID <small style="font-weight:normal; color:#6b7280;">(Optional numeric SIM ID — leave blank for auto)</small></label>
+                 <input v-model="modalSettings.config.zenderSimId" type="text" placeholder="Leave blank for Zender default route" />
+               </div>
+           </div>
            
            <div v-if="modalMessage" :class="['message', modalError ? 'error' : 'success']">
              {{ modalMessage }}
@@ -194,8 +233,9 @@ export default {
       manualIdInput: '',
       sessionToken: null,   // JWT session token from SSO exchange
       ssoError: null,       // Error message if SSO auth fails
-      inboundKey: null,     // Per-sub-account key for the Reve inbound push URL
-      copied: false,
+      inboundKey: null,     // Per-sub-account key for Reve & Zender inbound URLs
+      copiedReve: false,
+      copiedZender: false,
       showHelp: false,
       
       // Main state
@@ -226,8 +266,14 @@ export default {
     hasReveProvider() {
       return (this.providers || []).some((p) => p.type === 'revesms');
     },
+    hasZenderProvider() {
+      return (this.providers || []).some((p) => p.type === 'zender');
+    },
     reveInboundUrl() {
       return `${window.location.origin}/api/inbound/reve?key=${this.inboundKey}`;
+    },
+    zenderWebhookUrl() {
+      return `${window.location.origin}/api/inbound/zender?key=${this.inboundKey}`;
     }
   },
   mounted() {
@@ -376,10 +422,11 @@ export default {
       this.editingProviderId = null;
       this.modalSettings = {
         type: 'revesms',
-        name: 'My Reve Account',
+        name: '',
         config: {
           user: '', pass: '', senderId: '',
-          apikey: '', secretkey: '', callerID: ''
+          apikey: '', secretkey: '', callerID: '',
+          baseUrl: 'https://sms.romdix.com', zenderApiKey: '', zenderWebhookSecret: '', zenderSenderId: '', zenderSimId: ''
         }
       };
       this.modalMessage = '';
@@ -389,7 +436,12 @@ export default {
     editProvider(provider) {
       this.editingProviderId = provider.id;
       // Deep clone to avoid reactive edits before save
-      this.modalSettings = JSON.parse(JSON.stringify(provider));
+      const cloned = JSON.parse(JSON.stringify(provider));
+      cloned.config = {
+        baseUrl: 'https://sms.romdix.com',
+        ...(cloned.config || {})
+      };
+      this.modalSettings = cloned;
       this.modalMessage = '';
       this.modalError = false;
       this.showModal = true;
@@ -397,18 +449,31 @@ export default {
     closeModal() {
       this.showModal = false;
     },
+    hasSavedSecret(field) {
+      return Array.isArray(this.modalSettings.config.secretsSet) && this.modalSettings.config.secretsSet.includes(field);
+    },
     
     // API Actions
     async saveProvider() {
-      // Validate
+      // Validate (allow blank secret fields when editing an already-saved secret)
       if (this.modalSettings.type === 'revesms') {
-        if (!this.modalSettings.config.apikey || !this.modalSettings.config.secretkey) {
+        const hasKey = this.modalSettings.config.apikey || this.hasSavedSecret('apikey');
+        const hasSecret = this.modalSettings.config.secretkey || this.hasSavedSecret('secretkey');
+        if (!hasKey || !hasSecret) {
           this.modalError = true;
           this.modalMessage = "API Key and Secret Key are required.";
           return;
         }
+      } else if (this.modalSettings.type === 'zender') {
+        const hasApiKey = this.modalSettings.config.zenderApiKey || this.hasSavedSecret('zenderApiKey');
+        if (!this.modalSettings.config.baseUrl || !hasApiKey) {
+          this.modalError = true;
+          this.modalMessage = "Zender Site URL and Zender API Key are required.";
+          return;
+        }
       } else {
-        if (!this.modalSettings.config.user || !this.modalSettings.config.pass) {
+        const hasPass = this.modalSettings.config.pass || this.hasSavedSecret('pass');
+        if (!this.modalSettings.config.user || !hasPass) {
           this.modalError = true;
           this.modalMessage = "Username and Password are required.";
           return;
@@ -460,15 +525,18 @@ export default {
       this.error = false;
     },
     secretPlaceholder(field, fallback) {
-      const saved = Array.isArray(this.modalSettings.config.secretsSet) && this.modalSettings.config.secretsSet.includes(field);
-      return saved ? 'Saved — leave blank to keep' : fallback;
+      return this.hasSavedSecret(field) ? 'Saved — leave blank to keep' : fallback;
     },
-    copyInboundUrl() {
-      const url = this.reveInboundUrl;
+    copyUrl(url, kind) {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(url).then(() => {
-          this.copied = true;
-          setTimeout(() => { this.copied = false; }, 2000);
+          if (kind === 'zender') {
+            this.copiedZender = true;
+            setTimeout(() => { this.copiedZender = false; }, 2000);
+          } else {
+            this.copiedReve = true;
+            setTimeout(() => { this.copiedReve = false; }, 2000);
+          }
         });
       }
     },

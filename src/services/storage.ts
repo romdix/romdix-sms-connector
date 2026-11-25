@@ -129,7 +129,7 @@ export interface OutboundRecord {
 }
 
 // Provider credentials that must never be returned to a browser.
-const SECRET_FIELDS = ['apikey', 'secretkey', 'pass'];
+const SECRET_FIELDS = ['apikey', 'secretkey', 'pass', 'zenderApiKey', 'zenderWebhookSecret'];
 
 function encrypt(data: unknown): string {
   return CryptoJS.AES.encrypt(JSON.stringify(data), SECRET_KEY).toString();
@@ -357,6 +357,14 @@ export const storage = {
     const row = db
       .prepare('SELECT * FROM outbound_messages WHERE provider_message_id = ? LIMIT 1')
       .get(providerMessageId) as OutboundRecord | undefined;
+    return row || null;
+  },
+
+  /** Scoped outbound lookup for webhooks that already identify the sub-account. */
+  getOutboundByProviderMessageIdForLocation: (locationId: string, providerMessageId: string): OutboundRecord | null => {
+    const row = db
+      .prepare('SELECT * FROM outbound_messages WHERE location_id = ? AND provider_message_id = ? LIMIT 1')
+      .get(locationId, providerMessageId) as OutboundRecord | undefined;
     return row || null;
   },
 

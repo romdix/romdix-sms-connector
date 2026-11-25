@@ -6,6 +6,7 @@ import jwt from "jsonwebtoken";
 import { GHL } from "./ghl";
 import { storage } from "./services/storage";
 import { ProviderFactory } from "./services/provider-factory";
+import { mapZenderStatus, verifyZenderWebhookSignature } from "./services/zender";
 import { verifyGhlSignature } from "./services/webhook-security";
 import { addInboundMessage, createContact, lookupContactByPhone, updateMessageStatus } from "./services/ghl-api";
 import { startPollers } from "./services/poller";
@@ -226,7 +227,7 @@ app.post(
       const stored = storage.getCredentialsRaw(locationId);
       const previous = stored?.providers?.find((p) => p.id === providerId);
       if (previous?.config) {
-        for (const field of ["apikey", "secretkey", "pass"]) {
+        for (const field of ["apikey", "secretkey", "pass", "zenderApiKey", "zenderWebhookSecret"]) {
           if (!config[field] && previous.config[field]) config[field] = previous.config[field];
         }
       }
@@ -520,6 +521,130 @@ app.all("/api/dlr/reve", rateLimit(120, 60_000), async (req: Request, res: Respo
 
   console.log("[DLR] Reve status:", status);
   res.json({ ok: true, processed: true, status });
+});
+
+// --- Zender webhooks (inbound SMS + delivery status) ---
+// Configure in Zender -> Developer -> Webhooks:
+//   https://smsconnector.romdix.com/api/inbound/zender?key=<per-location key>
+app.post("/api/inbound/zender", rateLimit(120, 60_000), async (req: Request, res: Response) => {
+  const rawKey = String(req.query.key || req.header("x-inbound-key") || "");
+  let pushKey = rawKey.trim();
+  try {
+    pushKey = decodeURIComponent(pushKey);
+  } catch {
+    /* keep raw */
+  }
+  pushKey = pushKey.trim().toLowerCase();
+
+  const locationId = pushKey ? storage.getLocationByInboundKey(pushKey) : null;
+  if (!locationId) {
+    console.warn("[Zender] Webhook key missing or not recognised");
+    return res.status(401).json({ error: "Unauthorized." });
+  }
+
+  const creds = storage.getCredentialsRaw(locationId);
+  const zenderProviders = (creds?.providers || []).filter((p) => p.type === "zender");
+  if (zenderProviders.length === 0) {
+    return res.status(404).json({ error: "No Zender provider configured for this sub-account." });
+  }
+
+  // If any configured Zender provider on this location has a webhook secret, verify X-Webhook-Signature.
+  const secrets = zenderProviders
+    .map((p) => String(p.config?.zenderWebhookSecret || "").trim())
+    .filter(Boolean);
+  if (secrets.length > 0) {
+    const signature = req.header("x-webhook-signature") || req.header("x-gateway-signature");
+    const valid = secrets.some((secret) => verifyZenderWebhookSignature((req as any).rawBody, signature, secret));
+    if (!valid) {
+      console.warn("[Zender] Invalid webhook signature for location:", locationId);
+      return res.status(401).json({ error: "Invalid webhook signature." });
+    }
+  }
+
+  const event = String(req.body?.event || req.header("x-webhook-event") || "").trim().toLowerCase();
+  const payload = (req.body?.payload && typeof req.body.payload === "object") ? req.body.payload : (req.body || {});
+
+  if (event === "webhook.test") {
+    return res.json({ ok: true, test: true });
+  }
+
+  if (event === "sms.received" || String(payload.direction || "").toLowerCase() === "in") {
+    const sender = String(payload.from || "").trim();
+    const messageBody = payload.body;
+    const zenderMsgId = payload.id !== undefined && payload.id !== null ? String(payload.id) : "";
+
+    if (!sender || typeof messageBody !== "string" || !messageBody.trim()) {
+      return res.status(400).json({ error: "Inbound SMS payload missing sender or body." });
+    }
+
+    const dedupeKey = zenderMsgId
+      ? `zender:${locationId}:${zenderMsgId}`
+      : `zender:${locationId}:${crypto.createHash("sha256").update(`${sender}|${messageBody}`).digest("hex")}`;
+    if (storage.isMessageProcessed(dedupeKey)) {
+      return res.json({ ok: true, duplicate: true });
+    }
+
+    const digits = sender.replace(/[^0-9]/g, "");
+    const phone = digits ? `+${digits}` : sender;
+
+    try {
+      let contact = await lookupContactByPhone(locationId, phone);
+      if (!contact) contact = await createContact(locationId, phone);
+      await addInboundMessage(locationId, {
+        contactId: contact.id,
+        message: messageBody,
+        date: typeof payload.created_at === "string" ? payload.created_at : undefined,
+      });
+      storage.markMessageProcessed(dedupeKey);
+      console.log("[Inbound] Zender message added for location:", locationId);
+      return res.json({ ok: true });
+    } catch (error: any) {
+      console.error("[Inbound] Zender add failed:", error.message);
+      return res.status(502).json({ error: "Could not add the inbound message." });
+    }
+  }
+
+  if (event === "sms.sent" || event === "sms.delivered" || event === "sms.failed" || event === "sms.canceled") {
+    const zenderMsgId = payload.id !== undefined && payload.id !== null ? String(payload.id) : "";
+    if (!zenderMsgId) {
+      return res.json({ ok: true, processed: false });
+    }
+    const record = storage.getOutboundByProviderMessageIdForLocation(locationId, zenderMsgId);
+    if (!record) {
+      return res.json({ ok: true, processed: false });
+    }
+
+    const eventStatus = event.replace("sms.", "");
+    const mapped = mapZenderStatus(payload.status || eventStatus);
+
+    if (mapped === "delivered" || mapped === "failed") {
+      try {
+        await updateMessageStatus(
+          locationId,
+          record.ghl_message_id,
+          mapped,
+          mapped === "failed"
+            ? {
+                code: String(payload.error || "provider_error"),
+                type: "provider",
+                message: String(payload.error_reason || payload.error_message || "Zender reported delivery failure."),
+              }
+            : undefined
+        );
+      } catch (e: any) {
+        console.error("[DLR] Zender status update failed:", e.message);
+        return res.status(502).json({ error: "Could not update the message status." });
+      }
+      storage.deleteOutboundMessage(record.ghl_message_id);
+    } else if (mapped === "sent") {
+      storage.updateOutboundMessage(record.ghl_message_id, "sent");
+    }
+
+    console.log("[DLR] Zender status:", mapped, "for location:", locationId);
+    return res.json({ ok: true, processed: true, status: mapped });
+  }
+
+  return res.json({ ok: true, ignored: true });
 });
 
 // --- HighLevel app webhooks (install / uninstall) ---
