@@ -480,6 +480,13 @@ app.post("/webhooks/ghl", async (req: Request, res: Response) => {
 
 app.use(express.static(path));
 
+app.use((req, res, next) => {
+  if (req.path.startsWith("/css/") || req.path.startsWith("/js/")) {
+    res.setHeader("Cache-Control", "no-store");
+  }
+  next();
+});
+
 app.get("/health", (_req: Request, res: Response) => {
   res.json({ ok: true });
 });

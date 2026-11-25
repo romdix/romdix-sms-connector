@@ -719,7 +719,7 @@ body {
 }
 
 #app {
-  padding: 28px 16px 48px;
+  padding: 30px 16px 48px;
 }
 
 .shell {
