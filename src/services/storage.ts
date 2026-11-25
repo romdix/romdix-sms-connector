@@ -129,7 +129,7 @@ export interface OutboundRecord {
 }
 
 // Provider credentials that must never be returned to a browser.
-const SECRET_FIELDS = ['apikey', 'secretkey', 'pass', 'zenderApiKey', 'zenderWebhookSecret'];
+const SECRET_FIELDS = ['zenderApiKey', 'zenderWebhookSecret'];
 
 function encrypt(data: unknown): string {
   return CryptoJS.AES.encrypt(JSON.stringify(data), SECRET_KEY).toString();
@@ -196,20 +196,9 @@ export const storage = {
 
     try {
       const parsed = decrypt<LocationStorage>(row.data_encrypted);
-
-      // Auto-migration: If it's a legacy flat structure (no 'providers' array)
-      if (!parsed.providers) {
-        const legacyId = 'legacy_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
-        const providerType = (parsed as any).providerType || 'icombd';
-        let providerName = 'Migrated Provider';
-        if (providerType === 'icombd') providerName = 'Icombd (Legacy)';
-        if (providerType === 'revesms') providerName = 'Reve SMS (Legacy)';
-        return {
-          defaultProviderId: legacyId,
-          providers: [{ id: legacyId, type: providerType, name: providerName, config: { ...(parsed as any) } }],
-        };
+      if (!parsed || !Array.isArray(parsed.providers)) {
+        return null;
       }
-
       return parsed;
     } catch (e) {
       console.error('Error decrypting credentials:', e);
@@ -339,27 +328,6 @@ export const storage = {
     db.prepare('DELETE FROM outbound_messages WHERE attempts >= 120 OR updated_at < ?').run(cutoff);
   },
 
-  /** All configured providers of a type, with their location (used for provider callbacks). */
-  listConfiguredProviders: (type: string): Array<{ locationId: string; provider: ConfiguredProvider }> => {
-    const rows = db.prepare('SELECT location_id FROM locations').all() as { location_id: string }[];
-    const found: Array<{ locationId: string; provider: ConfiguredProvider }> = [];
-    for (const row of rows) {
-      const creds = storage.getCredentialsRaw(row.location_id);
-      for (const provider of creds?.providers || []) {
-        if (provider.type === type) found.push({ locationId: row.location_id, provider });
-      }
-    }
-    return found;
-  },
-
-  /** Look up a tracked outbound message by the provider's message id. */
-  getOutboundByProviderMessageId: (providerMessageId: string): OutboundRecord | null => {
-    const row = db
-      .prepare('SELECT * FROM outbound_messages WHERE provider_message_id = ? LIMIT 1')
-      .get(providerMessageId) as OutboundRecord | undefined;
-    return row || null;
-  },
-
   /** Scoped outbound lookup for webhooks that already identify the sub-account. */
   getOutboundByProviderMessageIdForLocation: (locationId: string, providerMessageId: string): OutboundRecord | null => {
     const row = db
@@ -368,7 +336,7 @@ export const storage = {
     return row || null;
   },
 
-  /** Per-sub-account secret used in the Reve inbound push URL. */
+  /** Per-sub-account secret used in the Zender webhook URL. */
   getOrCreateInboundKey: (locationId: string): string => {
     const existing = db
       .prepare('SELECT inbound_key FROM location_keys WHERE location_id = ?')

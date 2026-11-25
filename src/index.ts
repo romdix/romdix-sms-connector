@@ -38,9 +38,8 @@ app.use(
     },
   })
 );
-// HighLevel webhooks are JSON; provider callbacks (DLR push) arrive as form or text.
+// HighLevel webhooks are JSON.
 app.use(express.urlencoded({ extended: false, limit: "64kb" }));
-app.use(express.text({ type: ["text/*"], limit: "64kb" }));
 
 app.use((_req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -108,32 +107,6 @@ function rateLimit(max: number, windowMs: number) {
   };
 }
 
-/** Reve pushes DLRs as query params or as "Status:0, Message_ID:1, Text:DELIVRD". */
-function parseKeyValue(input: any): Record<string, string> {
-  if (!input) return {};
-  if (typeof input === "object") {
-    const out: Record<string, string> = {};
-    for (const [k, v] of Object.entries(input)) {
-      if (typeof v === "string" || typeof v === "number") out[k.toLowerCase()] = String(v);
-    }
-    return out;
-  }
-  const out: Record<string, string> = {};
-  for (const part of String(input).split(/[\n,;&]+/)) {
-    const match = part.match(/([A-Za-z_]+)\s*[:=]\s*"?([^",]+)"?/);
-    if (match) out[match[1].toLowerCase()] = match[2].trim();
-  }
-  return out;
-}
-
-function mapReveStatus(text: string): "sent" | "delivered" | "failed" | "pending" {
-  const value = String(text || "").toUpperCase();
-  if (/UNDELIV|REJECT|EXPIR|FAIL/.test(value)) return "failed";
-  if (/DELIVRD|DELIVERED/.test(value)) return "delivered";
-  if (/SENT|ACCEPT/.test(value)) return "sent";
-  return "pending";
-}
-
 // --- OAuth install ---
 
 app.get("/authorize-handler", async (req: Request, res: Response) => {
@@ -180,8 +153,13 @@ app.post("/api/auth/sso", rateLimit(30, 60_000), async (req: Request, res: Respo
 app.get("/api/settings", authenticateRequest, (req: AuthedRequest, res: Response) => {
   const locationId = req.locationId!;
   const creds = storage.getCredentials(locationId);
+  const providers = (creds?.providers || []).filter((p) => p.type === "zender");
+  const defaultProviderId = providers.some((p) => p.id === creds?.defaultProviderId)
+    ? creds!.defaultProviderId
+    : providers[0]?.id || "";
   res.json({
-    ...(creds || { defaultProviderId: "", providers: [] }),
+    defaultProviderId,
+    providers,
     inboundKey: storage.getOrCreateInboundKey(locationId),
   });
 });
@@ -192,8 +170,11 @@ app.post("/api/settings", authenticateRequest, (req: AuthedRequest, res: Respons
   if (!Array.isArray(providers)) {
     return res.status(400).json({ error: "providers must be an array." });
   }
+  const zenderProviders = providers
+    .filter((p) => p && (p.type === "zender" || !p.type))
+    .map((p) => ({ ...p, type: "zender" }));
   try {
-    storage.saveCredentials(locationId, { defaultProviderId, providers });
+    storage.saveCredentials(locationId, { defaultProviderId, providers: zenderProviders });
     console.log("[Settings] Saved for location:", locationId);
     res.json({ success: true });
   } catch (e: any) {
@@ -219,7 +200,7 @@ app.post(
   async (req: AuthedRequest, res: Response) => {
     const locationId = req.locationId!;
     const { providerType, providerId } = req.body || {};
-    const type = providerType || "icombd";
+    const type = providerType || "zender";
 
     // The browser never receives stored secrets, so fill blanks from storage.
     const config = { ...(req.body || {}) };
@@ -227,7 +208,7 @@ app.post(
       const stored = storage.getCredentialsRaw(locationId);
       const previous = stored?.providers?.find((p) => p.id === providerId);
       if (previous?.config) {
-        for (const field of ["apikey", "secretkey", "pass", "zenderApiKey", "zenderWebhookSecret"]) {
+        for (const field of ["zenderApiKey", "zenderWebhookSecret"]) {
           if (!config[field] && previous.config[field]) config[field] = previous.config[field];
         }
       }
@@ -294,12 +275,13 @@ app.post("/deliver", async (req: Request, res: Response) => {
   }
 
   const creds = storage.getCredentialsRaw(locationId);
-  if (!creds || !Array.isArray(creds.providers) || creds.providers.length === 0) {
-    console.error("[Deliver] No provider configured for location:", locationId);
-    return res.status(400).json({ error: "No provider configured for this sub-account." });
+  const zenderProviders = (creds?.providers || []).filter((p) => p.type === "zender");
+  if (zenderProviders.length === 0) {
+    console.error("[Deliver] No Zender connection configured for location:", locationId);
+    return res.status(400).json({ error: "No Zender connection configured for this sub-account." });
   }
 
-  const activeProvider = creds.providers.find((p) => p.id === creds.defaultProviderId) || creds.providers[0];
+  const activeProvider = zenderProviders.find((p) => p.id === creds?.defaultProviderId) || zenderProviders[0];
 
   let provider;
   try {
@@ -345,182 +327,6 @@ app.post("/deliver", async (req: Request, res: Response) => {
     // 400 stops HighLevel from retrying and double-sending.
     res.status(400).json({ error: "The SMS provider could not deliver this message." });
   }
-});
-
-// --- Inbound SMS pushed by Reve ---
-// Reve does not expose an inbox API; they POST { sender, receiver, message } to a URL we give them.
-const recentReveInbound = new Map<string, number>();
-
-app.all("/api/inbound/reve", rateLimit(120, 60_000), async (req: Request, res: Response) => {
-  // Reve may POST JSON or call with GET query parameters; accept both.
-  const params = { ...parseKeyValue(req.query), ...parseKeyValue(req.body) };
-  const sender = params.sender || params.from || params.msisdn;
-  const receiver = params.receiver || params.to;
-  const message = params.message || params.text || params.body;
-
-  // Preferred: a per-sub-account key, so one customer can never post into another's account.
-  // Normalise it: chat apps and gateways sometimes pad, URL-encode or upper-case it.
-  const rawKey = String(params.key || req.header("x-inbound-key") || "");
-  let pushKey = rawKey.trim();
-  try {
-    pushKey = decodeURIComponent(pushKey);
-  } catch (e) {
-    /* keep the raw value */
-  }
-  pushKey = pushKey.trim().toLowerCase();
-  console.log(
-    "[Inbound] Reve push received:",
-    req.method,
-    "| key:",
-    pushKey ? "yes" : "no",
-    "| receiver:",
-    receiver || "none",
-    "| message:",
-    message ? "yes" : "no"
-  );
-
-  if (!sender || !receiver || !message) {
-    return res.status(400).json({ error: "sender, receiver and message are required." });
-  }
-
-  const digits = (value: any) => String(value || "").replace(/[^0-9]/g, "");
-  const receiverDigits = digits(receiver);
-  let matches: Array<{ locationId: string; provider: any }> = [];
-
-  if (pushKey) {
-    const locationId = storage.getLocationByInboundKey(pushKey);
-    if (locationId) {
-      const creds = storage.getCredentialsRaw(locationId);
-      matches = (creds?.providers || [])
-        .filter((provider) => provider.type === "revesms")
-        .map((provider) => ({ locationId, provider }));
-    } else {
-      // A callback URL copied through chat can lose characters. If the receiving
-      // sender ID uniquely identifies a sub-account, route by it instead of dropping.
-      const byReceiver = storage
-        .listConfiguredProviders("revesms")
-        .filter((item) => digits(item.provider.config?.callerID) === receiverDigits);
-      if (process.env.INBOUND_RECEIVER_FALLBACK === "true" && byReceiver.length === 1) {
-        const expected = storage.getOrCreateInboundKey(byReceiver[0].locationId);
-        const hash = (value: string) => crypto.createHash("sha256").update(value).digest("hex").slice(0, 8);
-        console.warn(
-          "[Inbound] Invalid inbound key: received",
-          pushKey.length,
-          "chars (hash " + hash(pushKey) + "), expected",
-          expected.length,
-          "chars (hash " + hash(expected) + ")"
-        );
-        console.warn("[Inbound] Routing by receiver number instead");
-        matches = [{ locationId: byReceiver[0].locationId, provider: byReceiver[0].provider }];
-      } else {
-        console.warn("[Inbound] Reve key not recognised");
-        return res.status(401).json({ error: "Unauthorized." });
-      }
-    }
-    if (matches.length === 0) {
-      return res.status(404).json({ error: "No Reve provider configured for this sub-account." });
-    }
-  } else {
-    // Legacy: shared token + receiver-number match.
-    const expected = process.env.INBOUND_WEBHOOK_TOKEN;
-    if (!expected) {
-      return res.status(503).json({ error: "Inbound webhook is not configured." });
-    }
-    const token = req.header("x-webhook-token") || String(params.token || "");
-    const authorized =
-      token.length === expected.length &&
-      crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expected));
-    if (!authorized) return res.status(401).json({ error: "Unauthorized." });
-
-    matches = storage
-      .listConfiguredProviders("revesms")
-      .filter((item) => digits(item.provider.config?.callerID) === receiverDigits);
-    if (matches.length === 0) {
-      console.warn("[Inbound] Reve message for an unconfigured receiver number");
-      return res.status(404).json({ error: "No sub-account configured for this receiver number." });
-    }
-  }
-
-  // Reve sends no message id and may retry, so suppress identical repeats for 2 minutes.
-  const key = `reve:${digits(sender)}:${receiverDigits}:${String(message).slice(0, 64)}`;
-  const seenAt = recentReveInbound.get(key);
-  if (seenAt && Date.now() - seenAt < 120_000) {
-    return res.json({ success: true, duplicate: true });
-  }
-
-  const phone = `+${digits(sender)}`;
-  for (const match of matches) {
-    try {
-      let contact = await lookupContactByPhone(match.locationId, phone);
-      if (!contact) contact = await createContact(match.locationId, phone);
-      await addInboundMessage(match.locationId, { contactId: contact.id, message: String(message) });
-      recentReveInbound.set(key, Date.now());
-      if (recentReveInbound.size > 500) {
-        const cutoff = Date.now() - 120_000;
-        for (const [k, v] of recentReveInbound) if (v < cutoff) recentReveInbound.delete(k);
-      }
-      console.log("[Inbound] Reve message added for location:", match.locationId);
-      return res.json({ success: true });
-    } catch (error: any) {
-      console.error("[Inbound] Reve add failed:", error.message);
-    }
-  }
-
-  return res.status(502).json({ error: "Could not add the inbound message." });
-});
-
-// --- Delivery receipts (Reve push) ---
-// Configure in Reve: https://smsconnector.romdix.com/api/dlr/reve?apikey=...&secretkey=...&status=REPLACE_STATUS&text=REPLACE_TEXT&messageid=REPLACE_ID
-app.all("/api/dlr/reve", rateLimit(120, 60_000), async (req: Request, res: Response) => {
-  const params = { ...parseKeyValue(req.query), ...parseKeyValue(req.body) };
-  const apikey = params.apikey;
-  const secretkey = params.secretkey;
-  const messageId = params.messageid || params.message_id;
-  const rawStatus = params.text || params.status_text || params.status || "";
-
-  if (!apikey || !secretkey || !messageId) {
-    return res.status(400).json({ error: "apikey, secretkey and messageid are required." });
-  }
-
-  const matches = storage
-    .listConfiguredProviders("revesms")
-    .filter((x) => x.provider.config?.apikey === apikey && x.provider.config?.secretkey === secretkey);
-  if (matches.length === 0) {
-    console.warn("[DLR] Unknown Reve credentials");
-    return res.status(401).json({ error: "Unknown credentials." });
-  }
-
-  const record = storage.getOutboundByProviderMessageId(String(messageId));
-  if (!record) {
-    // Status for a message we did not track (e.g. sent before this deploy).
-    return res.json({ ok: true, processed: false });
-  }
-  if (!matches.some((m) => m.locationId === record.location_id)) {
-    return res.status(401).json({ error: "Credentials do not match this message." });
-  }
-
-  const status = mapReveStatus(rawStatus);
-  if (status === "delivered" || status === "failed") {
-    try {
-      await updateMessageStatus(
-        record.location_id,
-        record.ghl_message_id,
-        status,
-        status === "failed"
-          ? { code: "provider_error", type: "provider", message: "Carrier reported the message as undelivered." }
-          : undefined
-      );
-    } catch (e: any) {
-      console.error("[DLR] Status update failed:", e.message);
-      return res.status(502).json({ error: "Could not update the message status." });
-    }
-    storage.deleteOutboundMessage(record.ghl_message_id);
-  } else {
-    storage.updateOutboundMessage(record.ghl_message_id, status);
-  }
-
-  console.log("[DLR] Reve status:", status);
-  res.json({ ok: true, processed: true, status });
 });
 
 // --- Zender webhooks (inbound SMS + delivery status) ---

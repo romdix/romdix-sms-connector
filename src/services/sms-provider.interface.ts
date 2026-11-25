@@ -1,13 +1,5 @@
 export type ProviderDeliveryStatus = 'sent' | 'delivered' | 'failed' | 'pending';
 
-export interface InboundSms {
-  id: string;
-  from: string;
-  to?: string;
-  message: string;
-  receivedAt?: string;
-}
-
 export interface SMSProvider {
   /**
    * Sends an SMS message.
@@ -30,7 +22,4 @@ export interface SMSProvider {
 
   /** Poll the provider for the current delivery state of a message. */
   getStatus?(messageId: string, config: any): Promise<ProviderDeliveryStatus>;
-
-  /** Pull inbound messages (two-way SMS), when the provider supports it. */
-  pullInbound?(config: any): Promise<InboundSms[]>;
 }

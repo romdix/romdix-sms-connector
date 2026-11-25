@@ -27,10 +27,10 @@
 
       <h2>Before you write</h2>
       <ul>
-        <li>Check that your SMS provider credentials (API key/secret or username/password and sender ID) are saved in the app.</li>
-        <li>Use <strong>Test Connection</strong> in the app to confirm the provider accepts your credentials.</li>
-        <li>For two-way replies with Icombd, ask Icombd to enable the SMS Inbox feature on your account.</li>
-        <li>If messages are rejected, confirm your sender ID is approved by your provider.</li>
+        <li>Check that your Zender Site URL and Zender API Key are saved and active in the app.</li>
+        <li>Use <strong>Test Connection</strong> in the app to confirm your Zender server accepts your API key.</li>
+        <li>For two-way replies and live delivery reports, confirm your Zender webhook is subscribed to <code>sms.received</code>, <code>sms.sent</code>, <code>sms.delivered</code>, and <code>sms.failed</code>.</li>
+        <li>If messages stay queued in Zender, check your Zender device status or cron scheduler.</li>
       </ul>
 
       <h2>When you contact us, include</h2>

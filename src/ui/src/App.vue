@@ -1,222 +1,265 @@
 <template>
   <div id="app">
-    <div class="container">
-      <div class="header">
-        <h1>SMS Providers</h1>
-        <div class="header-actions">
-          <button v-if="!loading && locationId" @click="openModal()" class="primary-btn add-btn">+ Add Provider</button>
-          <button v-if="!loading && providers.length > 0" @click="disconnect" class="danger-btn">Disconnect</button>
-        </div>
-      </div>
-      
-      <div v-if="loading" class="loading-state">
-        <p>Loading context...</p>
-        <small v-if="loadingTime > 2">Taking longer than expected...</small>
-      </div>
-
-      <div v-else>
-        <!-- SSO Auth Error -->
-        <div v-if="ssoError" class="message error" style="margin-bottom:16px;">
-          🔒 {{ ssoError }}
-        </div>
-
-        <!-- Manual Location Entry -->
-        <div v-if="!locationId">
-          <div class="message warning">
-            Could not detect Location ID. Please enter manually.
+    <div class="shell">
+      <!-- Top Header -->
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
           </div>
-          <div class="form-group">
-            <label>Location ID</label>
-            <input v-model="manualIdInput" type="text" placeholder="loc_xxxxxxxx" />
-            <button @click="useManualId" style="margin-top: 10px;">Load Settings</button>
+          <div>
+            <div class="title-row">
+              <h1>Romdix SMS Connector</h1>
+              <span class="env-pill">Zender</span>
+            </div>
+            <p class="subtitle">Two-way SMS &amp; live delivery tracking connected to your Zender gateway</p>
           </div>
         </div>
 
-        <!-- Providers List -->
-        <div v-else>
-           <div class="context-info">Location: {{ locationId }} <button @click="resetLocation" class="link-btn">(Change)</button></div>
-           
-           <div v-if="providers.length === 0" class="empty-state">
-             <p>No SMS providers configured yet. Click "Add Provider" to get started.</p>
-           </div>
-           
-           <div v-else class="provider-list">
-             <table>
-               <thead>
-                 <tr>
-                   <th>Provider</th>
-                   <th>Name</th>
-                   <th>Default</th>
-                   <th>Actions</th>
-                 </tr>
-               </thead>
-               <tbody>
-                 <tr v-for="provider in providers" :key="provider.id" :class="{ 'is-default': defaultProviderId === provider.id }">
-                   <td>
-                     <span class="badge">{{ provider.type === 'icombd' ? 'Icombd' : provider.type === 'zender' ? 'Zender' : 'Reve SMS' }}</span>
-                   </td>
-                   <td>{{ provider.name }}</td>
-                   <td>
-                     <input type="radio" :value="provider.id" v-model="defaultProviderId" @change="saveActiveState" />
-                   </td>
-                   <td>
-                     <button @click="editProvider(provider)" class="action-btn edit" title="Edit">✏️</button>
-                     <button @click="deleteProvider(provider.id)" class="action-btn delete" title="Delete">🗑️</button>
-                   </td>
-                 </tr>
-               </tbody>
-             </table>
-           </div>
-
-           <div class="actions">
-             <button v-if="providers.length > 0" @click="saveActiveState" :disabled="saving" class="primary-btn save-active-btn">
-               {{ saving ? 'Saving...' : 'Save Settings' }}
-             </button>
-           </div>
-
-           <div v-if="hasReveProvider && inboundKey" class="inbound-box">
-             <strong>Reve inbound push URL</strong>
-             <p>Give this URL to Reve support so replies are delivered to this sub-account:</p>
-             <code class="inbound-url">{{ reveInboundUrl }}</code>
-             <button @click="copyUrl(reveInboundUrl, 'reve')" class="test-btn">{{ copiedReve ? 'Copied' : 'Copy' }}</button>
-           </div>
-
-           <div v-if="hasZenderProvider && inboundKey" class="inbound-box">
-             <strong>Zender webhook URL</strong>
-             <p>In Zender (<strong>Developer → Webhooks → New Webhook</strong>), paste this URL and select <code>sms.received</code>, <code>sms.sent</code>, <code>sms.delivered</code>, and <code>sms.failed</code>:</p>
-             <code class="inbound-url">{{ zenderWebhookUrl }}</code>
-             <button @click="copyUrl(zenderWebhookUrl, 'zender')" class="test-btn">{{ copiedZender ? 'Copied' : 'Copy' }}</button>
-           </div>
-
-           <div v-if="providers.length > 0" class="help-box">
-             <button type="button" class="link-btn" @click="showHelp = !showHelp">
-               {{ showHelp ? 'Hide setup help' : 'How to enable two-way replies' }}
-             </button>
-             <div v-if="showHelp" class="help-body">
-               <h4>Icombd</h4>
-               <p>
-                 Replies arrive automatically. Ask Icombd support to enable <strong>SMS Inbox</strong> on your
-                 account — the app then checks for new messages every 25 seconds. No URL is needed.
-               </p>
-               <h4>Reve SMS</h4>
-               <ol>
-                 <li>Save your Reve API key, secret key and caller ID.</li>
-                 <li>Copy the <strong>Reve inbound push URL</strong> shown above.</li>
-                 <li>Send it to Reve support and ask them to push inbound SMS for your sender ID to that URL.</li>
-                 <li>Reply from a phone to test — the message appears in Conversations.</li>
-               </ol>
-               <p class="muted">
-                 Reve enables the push per account on their side; the app cannot do it for you.
-               </p>
-               <h4>Zender</h4>
-               <ol>
-                 <li>In Zender, go to <strong>Developer → API Keys → New Key</strong>, enable <strong>Account</strong> + <strong>SMS</strong> permissions, and paste the key here.</li>
-                 <li>Save the provider, then copy the <strong>Zender webhook URL</strong> shown above.</li>
-                 <li>In Zender, go to <strong>Developer → Webhooks → New Webhook</strong>, paste that URL, and tick <code>sms.received</code>, <code>sms.sent</code>, <code>sms.delivered</code>, and <code>sms.failed</code>.</li>
-                 <li>(Optional) Copy Zender's Signing Secret into the provider's <strong>Webhook Signing Secret</strong> field and save.</li>
-               </ol>
-               <h4>Delivery status</h4>
-               <p>Sent, delivered and failed status updates are automatic for all providers.</p>
-             </div>
-           </div>
-
-           <div v-if="message" :class="['message', error ? 'error' : 'success']">
-             {{ message }}
-           </div>
+        <div class="topbar-actions" v-if="!loading && locationId">
+          <button @click="openModal()" class="btn btn-primary">+ Add Zender</button>
+          <button v-if="providers.length > 0" @click="disconnect" class="btn btn-ghost-danger">Disconnect</button>
         </div>
+      </header>
+
+      <!-- Loading -->
+      <div v-if="loading" class="card loading-card">
+        <div class="spinner"></div>
+        <p class="loading-title">Connecting to sub-account…</p>
+        <p v-if="loadingTime > 2" class="muted">Still verifying CRM session…</p>
       </div>
+
+      <!-- Main Body -->
+      <main v-else class="stack">
+        <div v-if="ssoError" class="alert alert-error">
+          <strong>Authentication Notice:</strong> {{ ssoError }}
+        </div>
+
+        <!-- Manual Location Fallback -->
+        <section v-if="!locationId" class="card">
+          <div class="alert alert-warning" style="margin-bottom: 16px;">
+            Could not automatically detect the CRM Location ID. Enter it below to load settings.
+          </div>
+          <div class="field-group">
+            <label>CRM Location ID</label>
+            <div class="inline-form">
+              <input v-model="manualIdInput" type="text" placeholder="e.g. Rh3O9aC398g336hh4Ljx" @keyup.enter="useManualId" />
+              <button @click="useManualId" class="btn btn-primary">Load Settings</button>
+            </div>
+          </div>
+        </section>
+
+        <template v-else>
+          <!-- Context Strip -->
+          <div class="context-bar">
+            <div class="context-chip">
+              <span class="dot dot-online"></span>
+              <span>Sub-account:</span>
+              <code>{{ locationId }}</code>
+              <button @click="resetLocation" class="link-inline">Switch</button>
+            </div>
+            <span class="context-meta" v-if="providers.length > 0">
+              {{ providers.length }} {{ providers.length === 1 ? 'connection' : 'connections' }} configured
+            </span>
+          </div>
+
+          <!-- Global Toast -->
+          <div v-if="message" :class="['alert', error ? 'alert-error' : 'alert-success']">
+            {{ message }}
+          </div>
+
+          <!-- Empty State -->
+          <section v-if="providers.length === 0" class="card empty-card">
+            <div class="empty-icon">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                <path d="m9 12 2 2 4-4" />
+              </svg>
+            </div>
+            <h2>Connect your Zender Gateway</h2>
+            <p class="muted">
+              Link your Zender URL and API key so every SMS from this CRM sub-account sends through Zender with real-time replies and delivery receipts.
+            </p>
+            <button @click="openModal()" class="btn btn-primary">+ Connect Zender</button>
+          </section>
+
+          <!-- Connections List -->
+          <section v-else class="connections-grid">
+            <article
+              v-for="provider in providers"
+              :key="provider.id"
+              :class="['card connection-card', { 'is-default': defaultProviderId === provider.id }]"
+            >
+              <div class="conn-main">
+                <div class="conn-head">
+                  <div class="conn-title-wrap">
+                    <span class="conn-name">{{ provider.name || 'Zender Gateway' }}</span>
+                    <span v-if="defaultProviderId === provider.id" class="pill pill-green">Default Active</span>
+                    <span v-else class="pill pill-slate">Standby</span>
+                  </div>
+                  <div class="conn-actions">
+                    <button
+                      v-if="defaultProviderId !== provider.id"
+                      @click="setDefaultProvider(provider.id)"
+                      :disabled="saving"
+                      class="btn btn-sm btn-outline"
+                    >
+                      Set Default
+                    </button>
+                    <button @click="editProvider(provider)" class="btn btn-sm btn-outline">Edit</button>
+                    <button @click="deleteProvider(provider.id)" class="btn btn-sm btn-ghost-danger" title="Remove connection">Delete</button>
+                  </div>
+                </div>
+
+                <div class="conn-meta">
+                  <span class="meta-item">
+                    <strong>Site:</strong> {{ provider.config?.baseUrl || 'https://sms.romdix.com' }}
+                  </span>
+                  <span class="meta-item">
+                    <strong>Webhook Auth:</strong>
+                    {{ hasConfigSecret(provider, 'zenderWebhookSecret') ? 'HMAC Secret + URL Key' : 'URL Key' }}
+                  </span>
+                  <span v-if="provider.config?.zenderSimId" class="meta-item">
+                    <strong>SIM ID:</strong> {{ provider.config.zenderSimId }}
+                  </span>
+                  <span v-if="provider.config?.zenderSenderId" class="meta-item">
+                    <strong>Sender ID:</strong> {{ provider.config.zenderSenderId }}
+                  </span>
+                </div>
+              </div>
+            </article>
+          </section>
+
+          <!-- Two-Way Webhook Card -->
+          <section v-if="inboundKey" class="card webhook-card">
+            <div class="card-header-row">
+              <div>
+                <h2>Zender 2-Way Webhook</h2>
+                <p class="muted">
+                  Paste this URL in Zender under <strong>Developer → Webhooks → New Webhook</strong> and select
+                  <code>sms.received</code>, <code>sms.sent</code>, <code>sms.delivered</code>, and <code>sms.failed</code>.
+                </p>
+              </div>
+            </div>
+            <div class="copy-row">
+              <code class="webhook-url">{{ zenderWebhookUrl }}</code>
+              <button @click="copyWebhookUrl" class="btn btn-outline copy-btn">
+                {{ copiedWebhook ? 'Copied!' : 'Copy URL' }}
+              </button>
+            </div>
+          </section>
+
+          <!-- Setup Guide Accordion -->
+          <section class="card guide-card">
+            <button type="button" class="guide-toggle" @click="showHelp = !showHelp">
+              <span>Quick Setup Guide (3 Steps)</span>
+              <span class="chevron">{{ showHelp ? '▲' : '▼' }}</span>
+            </button>
+            <div v-if="showHelp" class="guide-steps">
+              <div class="step-item">
+                <span class="step-num">1</span>
+                <div>
+                  <strong>Create an API Key in Zender</strong>
+                  <p>Open Zender → <strong>Developer → API Keys → New Key</strong>, tick <strong>Account</strong> and <strong>SMS</strong> permissions, and copy the key.</p>
+                </div>
+              </div>
+              <div class="step-item">
+                <span class="step-num">2</span>
+                <div>
+                  <strong>Connect &amp; Test here</strong>
+                  <p>Click <strong>+ Add Zender</strong> above, enter your Zender URL and API key, run <strong>Test Connection</strong>, and save.</p>
+                </div>
+              </div>
+              <div class="step-item">
+                <span class="step-num">3</span>
+                <div>
+                  <strong>Enable Inbound &amp; Delivery Status</strong>
+                  <p>Add the <strong>Zender 2-Way Webhook</strong> URL shown above in Zender (<strong>Developer → Webhooks</strong>) and tick <code>sms.received</code>, <code>sms.sent</code>, <code>sms.delivered</code>, and <code>sms.failed</code>. Optionally paste the Signing Secret into the connection's Advanced Options.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+        </template>
+      </main>
     </div>
 
-    <!-- Add/Edit Provider Modal -->
-    <div v-if="showModal" class="modal-overlay">
-      <div class="modal">
+    <!-- Add / Edit Zender Modal -->
+    <div v-if="showModal" class="modal-backdrop" @click.self="closeModal">
+      <div class="modal" role="dialog" aria-modal="true">
         <div class="modal-header">
-          <h2>{{ editingProviderId ? 'Edit Provider' : 'Add New Provider' }}</h2>
-          <button @click="closeModal" class="close-btn">&times;</button>
+          <div>
+            <h2>{{ editingProviderId ? 'Edit Zender Connection' : 'Connect Zender Gateway' }}</h2>
+            <p class="modal-subtitle">Enter your Zender workspace URL and API key.</p>
+          </div>
+          <button @click="closeModal" class="icon-close" aria-label="Close">&times;</button>
         </div>
-        
+
         <div class="modal-body">
-           <div class="form-group">
-            <label>SMS Provider Type</label>
-            <select v-model="modalSettings.type" :disabled="editingProviderId">
-                <option value="icombd">Icombd</option>
-                <option value="revesms">Reve SMS</option>
-                <option value="zender">Zender</option>
-            </select>
-           </div>
-           
-           <div class="form-group">
-            <label>Name (Optional)</label>
-             <input v-model="modalSettings.name" type="text" placeholder="e.g. Primary Reve Account" />
-           </div>
+          <div class="field-group">
+            <label>Connection Name <span class="opt">(Optional)</span></label>
+            <input v-model="modalSettings.name" type="text" placeholder="e.g. Romdix Zender" />
+          </div>
 
-           <!-- Icombd Fields -->
-           <div v-if="modalSettings.type === 'icombd'">
-               <div class="form-group">
-                <label>Icombd Username</label>
-                <input v-model="modalSettings.config.user" type="text" placeholder="Username" />
-              </div>
-              <div class="form-group">
-                <label>Icombd Password</label>
-                <input v-model="modalSettings.config.pass" type="password" :placeholder="secretPlaceholder('pass', 'Password')" />
-              </div>
-              <div class="form-group">
-                <label>Sender ID</label>
-                <input v-model="modalSettings.config.senderId" type="text" placeholder="Sender Name or Number" />
-              </div>
-           </div>
+          <div class="field-group">
+            <label>Zender Site URL</label>
+            <input v-model="modalSettings.config.baseUrl" type="url" placeholder="https://sms.romdix.com" />
+          </div>
 
-           <!-- Reve SMS Fields -->
-           <div v-else-if="modalSettings.type === 'revesms'">
-               <div class="form-group">
-                 <label>API Key</label>
-                 <input v-model="modalSettings.config.apikey" type="text" :placeholder="secretPlaceholder('apikey', 'API Key')" />
-               </div>
-               <div class="form-group">
-                 <label>Secret Key</label>
-                 <input v-model="modalSettings.config.secretkey" type="password" :placeholder="secretPlaceholder('secretkey', 'Secret Key')" />
-               </div>
-              <div class="form-group">
-                <label>Caller ID / Sender ID <small style="font-weight:normal; color:#6b7280;">(Required for sending)</small></label>
-                <input v-model="modalSettings.config.callerID" type="text" placeholder="Caller ID" />
-              </div>
-           </div>
+          <div class="field-group">
+            <label>Zender API Key</label>
+            <input
+              v-model="modalSettings.config.zenderApiKey"
+              type="password"
+              autocomplete="off"
+              :placeholder="secretPlaceholder('zenderApiKey', 'Paste Bearer API key from Zender')"
+            />
+          </div>
 
-           <!-- Zender Fields -->
-           <div v-else-if="modalSettings.type === 'zender'">
-               <div class="form-group">
-                 <label>Zender Site URL</label>
-                 <input v-model="modalSettings.config.baseUrl" type="url" placeholder="https://sms.romdix.com" />
-               </div>
-               <div class="form-group">
-                 <label>Zender API Key</label>
-                 <input v-model="modalSettings.config.zenderApiKey" type="password" :placeholder="secretPlaceholder('zenderApiKey', 'API Key from Zender -> Developer -> API Keys')" />
-               </div>
-               <div class="form-group">
-                 <label>Webhook Signing Secret <small style="font-weight:normal; color:#6b7280;">(Optional — from Zender Webhooks)</small></label>
-                 <input v-model="modalSettings.config.zenderWebhookSecret" type="password" :placeholder="secretPlaceholder('zenderWebhookSecret', 'Optional — leave blank if unused')" />
-               </div>
-               <div class="form-group">
-                 <label>Zender Sender ID <small style="font-weight:normal; color:#6b7280;">(Optional numeric ID — leave blank for auto)</small></label>
-                 <input v-model="modalSettings.config.zenderSenderId" type="text" placeholder="Leave blank for Zender default route" />
-               </div>
-               <div class="form-group">
-                 <label>Zender SIM ID <small style="font-weight:normal; color:#6b7280;">(Optional numeric SIM ID — leave blank for auto)</small></label>
-                 <input v-model="modalSettings.config.zenderSimId" type="text" placeholder="Leave blank for Zender default route" />
-               </div>
-           </div>
-           
-           <div v-if="modalMessage" :class="['message', modalError ? 'error' : 'success']">
-             {{ modalMessage }}
-           </div>
+          <div class="advanced-wrap">
+            <button type="button" class="link-inline" @click="showAdvanced = !showAdvanced">
+              {{ showAdvanced ? 'Hide Advanced Options' : 'Show Advanced Options (Webhook Secret / Routing IDs)' }}
+            </button>
+
+            <div v-if="showAdvanced" class="advanced-box">
+              <div class="field-group">
+                <label>Webhook Signing Secret <span class="opt">(Optional)</span></label>
+                <input
+                  v-model="modalSettings.config.zenderWebhookSecret"
+                  type="password"
+                  autocomplete="off"
+                  :placeholder="secretPlaceholder('zenderWebhookSecret', 'From Zender -> Developer -> Webhooks')"
+                />
+              </div>
+
+              <div class="two-col">
+                <div class="field-group">
+                  <label>Zender SIM ID <span class="opt">(Optional)</span></label>
+                  <input v-model="modalSettings.config.zenderSimId" type="text" placeholder="Auto (leave blank)" />
+                </div>
+                <div class="field-group">
+                  <label>Zender Sender ID <span class="opt">(Optional)</span></label>
+                  <input v-model="modalSettings.config.zenderSenderId" type="text" placeholder="Auto (leave blank)" />
+                </div>
+              </div>
+              <p class="field-hint">
+                Leave SIM ID and Sender ID blank so Zender uses its configured routing rules. Only enter numeric IDs if you want to pin a specific SIM or default provider sender.
+              </p>
+            </div>
+          </div>
+
+          <div v-if="modalMessage" :class="['alert', modalError ? 'alert-error' : 'alert-success']" style="margin-top: 14px;">
+            {{ modalMessage }}
+          </div>
         </div>
-        
+
         <div class="modal-footer">
-          <button @click="testConnection" :disabled="testing || saving" class="test-btn">
-              {{ testing ? 'Testing...' : 'Test Connection' }}
+          <button @click="testConnection" :disabled="testing || saving" class="btn btn-outline">
+            {{ testing ? 'Testing…' : 'Test Connection' }}
           </button>
-          <button @click="saveProvider" :disabled="saving || testing" class="primary-btn">
-            {{ saving ? 'Saving...' : 'Save Provider' }}
+          <button @click="saveProvider" :disabled="saving || testing" class="btn btn-primary">
+            {{ saving ? 'Saving…' : 'Save Connection' }}
           </button>
         </div>
       </div>
@@ -231,27 +274,24 @@ export default {
     return {
       locationId: null,
       manualIdInput: '',
-      sessionToken: null,   // JWT session token from SSO exchange
-      ssoError: null,       // Error message if SSO auth fails
-      inboundKey: null,     // Per-sub-account key for Reve & Zender inbound URLs
-      copiedReve: false,
-      copiedZender: false,
+      sessionToken: null,
+      ssoError: null,
+      inboundKey: null,
+      copiedWebhook: false,
       showHelp: false,
-      
-      // Main state
+      showAdvanced: false,
+
       providers: [],
       defaultProviderId: '',
-      
-      // Modal state
+
       showModal: false,
       editingProviderId: null,
       modalSettings: {
-        type: 'revesms',
+        type: 'zender',
         name: '',
         config: {}
       },
-      
-      // UI state
+
       loading: true,
       loadingTime: 0,
       saving: false,
@@ -260,18 +300,9 @@ export default {
       error: false,
       modalMessage: '',
       modalError: false
-    }
+    };
   },
   computed: {
-    hasReveProvider() {
-      return (this.providers || []).some((p) => p.type === 'revesms');
-    },
-    hasZenderProvider() {
-      return (this.providers || []).some((p) => p.type === 'zender');
-    },
-    reveInboundUrl() {
-      return `${window.location.origin}/api/inbound/reve?key=${this.inboundKey}`;
-    },
     zenderWebhookUrl() {
       return `${window.location.origin}/api/inbound/zender?key=${this.inboundKey}`;
     }
@@ -282,13 +313,10 @@ export default {
   },
   methods: {
     startLoadingTimer() {
-        setInterval(() => {
-            if (this.loading) this.loadingTime++;
-        }, 1000);
+      setInterval(() => {
+        if (this.loading) this.loadingTime++;
+      }, 1000);
     },
-    // Ask the GoHighLevel parent frame for the encrypted user payload.
-    // Custom menu links open the page in an iframe without an ssoToken in the URL,
-    // so this handshake is the only way to prove who is looking at the page.
     requestGhlUserData(timeoutMs = 5000) {
       if (window.parent === window) return Promise.resolve(null);
       return new Promise((resolve) => {
@@ -311,7 +339,7 @@ export default {
         window.addEventListener('message', onMessage);
         try {
           window.parent.postMessage({ message: 'REQUEST_USER_DATA' }, '*');
-        } catch (e) {
+        } catch {
           finish(null);
         }
       });
@@ -322,23 +350,18 @@ export default {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ssoToken })
       });
-      if (!res.ok) {
-        console.error('[Auth] SSO exchange failed:', res.status, await res.text());
-        return false;
-      }
+      if (!res.ok) return false;
       const data = await res.json();
       this.sessionToken = data.sessionToken;
       if (data.locationId) this.locationId = data.locationId;
       return true;
     },
-    // Gets a session token from the URL token or the GHL iframe handshake.
     async ensureSession() {
       if (this.sessionToken) return true;
       const urlParams = new URLSearchParams(window.location.search);
       const hashParams = new URLSearchParams(window.location.hash.substring(1));
       let ssoToken = urlParams.get('ssoToken') || hashParams.get('ssoToken');
       if (!ssoToken) {
-        console.log('[Auth] No ssoToken in URL, asking GHL parent window...');
         ssoToken = await this.requestGhlUserData();
       }
       if (!ssoToken) return false;
@@ -349,7 +372,6 @@ export default {
         const urlParams = new URLSearchParams(window.location.search);
         const hashParams = new URLSearchParams(window.location.hash.substring(1));
 
-        // === Primary Auth Path: GHL SSO Token (URL or iframe handshake) ===
         const hasUrlToken = !!(urlParams.get('ssoToken') || hashParams.get('ssoToken'));
         const authenticated = await this.ensureSession();
         if (authenticated && this.locationId) {
@@ -361,7 +383,6 @@ export default {
           return;
         }
 
-        // === Fallback: Manual locationId detection (for internal testing) ===
         const getValidParam = (name) => {
           const val = urlParams.get(name) || hashParams.get(name);
           if (val && !val.includes('{{') && !val.includes('}}')) return val;
@@ -369,34 +390,33 @@ export default {
         };
         let detectedId = getValidParam('locationId') || getValidParam('location_id');
         if (!detectedId && document.referrer) {
-          const referrerMatch = document.referrer.match(/\/location\/([a-zA-Z0-9]+)/);
-          if (referrerMatch && referrerMatch[1]) detectedId = referrerMatch[1];
+          const match = document.referrer.match(/\/location\/([a-zA-Z0-9]+)/);
+          if (match && match[1]) detectedId = match[1];
         }
         this.locationId = detectedId;
-        // Note: in fallback mode, no sessionToken — manual use only.
       } catch (e) {
-        console.error("Init Error:", e);
+        console.error('Init Error:', e);
       } finally {
         this.loading = false;
       }
     },
     async useManualId() {
-        if (!this.manualIdInput) return;
-        this.locationId = this.manualIdInput;
-        this.loading = true;
-        await this.loadSettings();
-        this.loading = false;
+      if (!this.manualIdInput) return;
+      this.locationId = this.manualIdInput.trim();
+      this.loading = true;
+      await this.loadSettings();
+      this.loading = false;
     },
     resetLocation() {
-        this.locationId = null;
-        this.providers = [];
-        this.defaultProviderId = '';
-        this.message = '';
+      this.locationId = null;
+      this.providers = [];
+      this.defaultProviderId = '';
+      this.message = '';
     },
     async loadSettings() {
       try {
-        const headers = this.sessionToken ? { 'Authorization': `Bearer ${this.sessionToken}` } : {};
-        const res = await fetch(`/api/settings`, { headers });
+        const headers = this.sessionToken ? { Authorization: `Bearer ${this.sessionToken}` } : {};
+        const res = await fetch('/api/settings', { headers });
         if (res.status === 401) {
           this.ssoError = 'CRM login could not be verified. Open this page from inside your CRM and try again.';
           this.providers = [];
@@ -405,43 +425,52 @@ export default {
         }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        this.providers = data.providers || [];
+        this.providers = (data.providers || []).filter((p) => p.type === 'zender');
         this.defaultProviderId = data.defaultProviderId || '';
         this.inboundKey = data.inboundKey || null;
-        if (this.providers.length === 1 && !this.defaultProviderId) {
+        if (this.providers.length > 0 && !this.providers.some((p) => p.id === this.defaultProviderId)) {
           this.defaultProviderId = this.providers[0].id;
         }
       } catch (e) {
-        console.error("Failed to load settings", e);
         this.ssoError = `Could not load settings: ${e.message}`;
       }
     },
-    
-    // Modal Interaction
     openModal() {
       this.editingProviderId = null;
       this.modalSettings = {
-        type: 'revesms',
+        type: 'zender',
         name: '',
         config: {
-          user: '', pass: '', senderId: '',
-          apikey: '', secretkey: '', callerID: '',
-          baseUrl: 'https://sms.romdix.com', zenderApiKey: '', zenderWebhookSecret: '', zenderSenderId: '', zenderSimId: ''
+          baseUrl: 'https://sms.romdix.com',
+          zenderApiKey: '',
+          zenderWebhookSecret: '',
+          zenderSenderId: '',
+          zenderSimId: ''
         }
       };
+      this.showAdvanced = false;
       this.modalMessage = '';
       this.modalError = false;
       this.showModal = true;
     },
     editProvider(provider) {
       this.editingProviderId = provider.id;
-      // Deep clone to avoid reactive edits before save
       const cloned = JSON.parse(JSON.stringify(provider));
+      cloned.type = 'zender';
       cloned.config = {
         baseUrl: 'https://sms.romdix.com',
+        zenderApiKey: '',
+        zenderWebhookSecret: '',
+        zenderSenderId: '',
+        zenderSimId: '',
         ...(cloned.config || {})
       };
       this.modalSettings = cloned;
+      this.showAdvanced = !!(
+        cloned.config.zenderSenderId ||
+        cloned.config.zenderSimId ||
+        this.hasConfigSecret(cloned, 'zenderWebhookSecret')
+      );
       this.modalMessage = '';
       this.modalError = false;
       this.showModal = true;
@@ -449,119 +478,104 @@ export default {
     closeModal() {
       this.showModal = false;
     },
-    hasSavedSecret(field) {
-      return Array.isArray(this.modalSettings.config.secretsSet) && this.modalSettings.config.secretsSet.includes(field);
+    hasConfigSecret(provider, field) {
+      return Array.isArray(provider?.config?.secretsSet) && provider.config.secretsSet.includes(field);
     },
-    
-    // API Actions
+    hasSavedSecret(field) {
+      return this.hasConfigSecret(this.modalSettings, field);
+    },
+    secretPlaceholder(field, fallback) {
+      return this.hasSavedSecret(field) ? 'Saved — leave blank to keep' : fallback;
+    },
     async saveProvider() {
-      // Validate (allow blank secret fields when editing an already-saved secret)
-      if (this.modalSettings.type === 'revesms') {
-        const hasKey = this.modalSettings.config.apikey || this.hasSavedSecret('apikey');
-        const hasSecret = this.modalSettings.config.secretkey || this.hasSavedSecret('secretkey');
-        if (!hasKey || !hasSecret) {
-          this.modalError = true;
-          this.modalMessage = "API Key and Secret Key are required.";
-          return;
-        }
-      } else if (this.modalSettings.type === 'zender') {
-        const hasApiKey = this.modalSettings.config.zenderApiKey || this.hasSavedSecret('zenderApiKey');
-        if (!this.modalSettings.config.baseUrl || !hasApiKey) {
-          this.modalError = true;
-          this.modalMessage = "Zender Site URL and Zender API Key are required.";
-          return;
-        }
-      } else {
-        const hasPass = this.modalSettings.config.pass || this.hasSavedSecret('pass');
-        if (!this.modalSettings.config.user || !hasPass) {
-          this.modalError = true;
-          this.modalMessage = "Username and Password are required.";
-          return;
-        }
+      const hasApiKey = this.modalSettings.config.zenderApiKey || this.hasSavedSecret('zenderApiKey');
+      if (!this.modalSettings.config.baseUrl || !hasApiKey) {
+        this.modalError = true;
+        this.modalMessage = 'Zender Site URL and Zender API Key are required.';
+        return;
       }
 
       this.saving = true;
       this.modalMessage = '';
-      
-      // Update local state
+
+      const payload = JSON.parse(JSON.stringify(this.modalSettings));
+      payload.type = 'zender';
+      if (!payload.name || !payload.name.trim()) {
+        payload.name = 'Zender Gateway';
+      }
+
       if (this.editingProviderId) {
-        const index = this.providers.findIndex(p => p.id === this.editingProviderId);
+        const index = this.providers.findIndex((p) => p.id === this.editingProviderId);
         if (index !== -1) {
-          this.providers.splice(index, 1, JSON.parse(JSON.stringify(this.modalSettings)));
+          this.providers.splice(index, 1, payload);
         }
       } else {
-        const newProvider = {
-          id: 'prov_' + Date.now().toString(36),
-          ...JSON.parse(JSON.stringify(this.modalSettings))
-        };
-        this.providers.push(newProvider);
+        const created = { id: 'prov_' + Date.now().toString(36), ...payload };
+        this.providers.push(created);
         if (this.providers.length === 1) {
-          this.defaultProviderId = newProvider.id;
+          this.defaultProviderId = created.id;
         }
       }
 
-      // Persist to backend
       try {
         await this.persistState();
+        await this.loadSettings();
         this.closeModal();
-        this.message = 'Provider saved successfully!';
+        this.message = 'Zender connection saved.';
         this.error = false;
       } catch (e) {
-        // persistState already sets this.message, just show modal error too
         this.modalMessage = `Save failed: ${e.message}`;
         this.modalError = true;
       } finally {
         this.saving = false;
       }
     },
+    async setDefaultProvider(id) {
+      this.defaultProviderId = id;
+      this.saving = true;
+      try {
+        await this.persistState();
+        this.message = 'Default Zender connection updated.';
+        this.error = false;
+      } finally {
+        this.saving = false;
+      }
+    },
     async deleteProvider(id) {
-      if (!confirm('Are you sure you want to delete this provider?')) return;
-      this.providers = this.providers.filter(p => p.id !== id);
+      if (!confirm('Remove this Zender connection?')) return;
+      this.providers = this.providers.filter((p) => p.id !== id);
       if (this.defaultProviderId === id) {
-        this.defaultProviderId = this.providers.length > 0 ? this.providers[0].id : '';
+        this.defaultProviderId = this.providers[0]?.id || '';
       }
       await this.persistState();
-      this.message = 'Provider deleted.';
+      this.message = 'Connection removed.';
       this.error = false;
     },
-    secretPlaceholder(field, fallback) {
-      return this.hasSavedSecret(field) ? 'Saved — leave blank to keep' : fallback;
-    },
-    copyUrl(url, kind) {
+    copyWebhookUrl() {
       if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(url).then(() => {
-          if (kind === 'zender') {
-            this.copiedZender = true;
-            setTimeout(() => { this.copiedZender = false; }, 2000);
-          } else {
-            this.copiedReve = true;
-            setTimeout(() => { this.copiedReve = false; }, 2000);
-          }
+        navigator.clipboard.writeText(this.zenderWebhookUrl).then(() => {
+          this.copiedWebhook = true;
+          setTimeout(() => {
+            this.copiedWebhook = false;
+          }, 2000);
         });
       }
     },
     async disconnect() {
-      if (!confirm('Disconnect this sub-account? Saved provider credentials will be deleted.')) return;
+      if (!confirm('Disconnect this sub-account? Saved Zender credentials will be deleted.')) return;
       try {
         const headers = {};
-        if (this.sessionToken) headers['Authorization'] = `Bearer ${this.sessionToken}`;
+        if (this.sessionToken) headers.Authorization = `Bearer ${this.sessionToken}`;
         const res = await fetch('/api/settings', { method: 'DELETE', headers });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         this.providers = [];
         this.defaultProviderId = '';
-        this.message = 'Disconnected. Provider credentials deleted.';
+        this.message = 'Disconnected. Credentials deleted.';
         this.error = false;
       } catch (e) {
         this.message = `Disconnect failed: ${e.message}`;
         this.error = true;
       }
-    },
-    async saveActiveState() {
-      this.saving = true;
-      await this.persistState();
-      this.saving = false;
-      this.message = 'Default provider updated!';
-      this.error = false;
     },
     async persistState() {
       try {
@@ -569,37 +583,32 @@ export default {
           defaultProviderId: this.defaultProviderId,
           providers: this.providers
         });
-
-        const send = async () => {
+        const send = () => {
           const headers = { 'Content-Type': 'application/json' };
-          if (this.sessionToken) headers['Authorization'] = `Bearer ${this.sessionToken}`;
+          if (this.sessionToken) headers.Authorization = `Bearer ${this.sessionToken}`;
           return fetch('/api/settings', { method: 'POST', headers, body });
         };
 
         let res = await send();
-        // Session token can expire (8h) or be missing — try the GHL handshake once more.
         if (res.status === 401) {
-          console.log('[Auth] Save rejected with 401, re-authenticating...');
           this.sessionToken = null;
           if (await this.ensureSession()) {
             res = await send();
           }
         }
-
         if (!res.ok) {
           let detail = '';
           try {
             const data = await res.json();
             detail = data.error || '';
-          } catch (e) { /* non-JSON error body */ }
+          } catch { /* ignore */ }
           if (res.status === 401) {
-            detail = 'GoHighLevel login could not be verified. Open this page from the "Romdix SMS Config" menu inside GoHighLevel and try again.';
+            detail = 'CRM session expired. Re-open this page inside GoHighLevel and try again.';
             this.ssoError = detail;
           }
           throw new Error(detail || `HTTP ${res.status}`);
         }
       } catch (e) {
-        console.error(e);
         this.message = `Error saving: ${e.message}`;
         this.error = true;
         throw e;
@@ -610,303 +619,592 @@ export default {
       this.modalMessage = '';
       this.modalError = false;
       try {
-        // Build payload specifically for the /api/test-connection endpoint
-        // Test endpoint expects { providerType: 'revesms', apikey: '...', etc }
-        const testPayload = {
-          providerType: this.modalSettings.type,
-          providerId: this.editingProviderId || null,
-          ...this.modalSettings.config
-        };
-
-        const testHeaders = { 'Content-Type': 'application/json' };
-        if (this.sessionToken) testHeaders['Authorization'] = `Bearer ${this.sessionToken}`;
+        const headers = { 'Content-Type': 'application/json' };
+        if (this.sessionToken) headers.Authorization = `Bearer ${this.sessionToken}`;
         const res = await fetch('/api/test-connection', {
           method: 'POST',
-          headers: testHeaders,
-          body: JSON.stringify(testPayload)
+          headers,
+          body: JSON.stringify({
+            providerType: 'zender',
+            providerId: this.editingProviderId || null,
+            ...this.modalSettings.config
+          })
         });
         const data = await res.json();
-        
         if (data.success) {
-             this.modalMessage = data.message || 'Connection Verified!';
+          this.modalMessage = data.message || 'Connection Successful!';
         } else {
-             throw new Error(data.error || 'Test failed');
+          throw new Error(data.error || 'Connection test failed');
         }
       } catch (e) {
-        this.modalMessage = `Connection Test Failed: ${e.message}`;
+        this.modalMessage = e.message;
         this.modalError = true;
       } finally {
         this.testing = false;
       }
     }
   }
-}
+};
 </script>
 
 <style>
-/* CSS Reset and Variables */
 :root {
-  --primary: #155eef;
-  --primary-hover: #175cd3;
-  --bg-color: #f9fafb;
-  --card-bg: #ffffff;
-  --text-main: #111827;
-  --text-muted: #6b7280;
-  --border: #eaecf0;
-  --danger: #d92d20;
-  --danger-hover: #b42318;
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --text: #0f172a;
+  --muted: #64748b;
+  --border: #e2e8f0;
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --success-bg: #ecfdf5;
+  --success-text: #065f46;
+  --success-border: #a7f3d0;
+  --danger: #dc2626;
+  --danger-bg: #fef2f2;
+  --warning-bg: #fffbeb;
+  --warning-text: #92400e;
 }
 
+* { box-sizing: border-box; }
+
 body {
-  background-color: var(--bg-color);
   margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 #app {
-  font-family: Inter, Helvetica, Arial, sans-serif;
-  color: var(--text-main);
-  margin-top: 40px;
-  max-width: 800px;
-  margin-left: auto;
-  margin-right: auto;
+  padding: 28px 16px 48px;
 }
 
-.container {
-  background: var(--card-bg);
-  padding: 30px;
-  border-radius: 12px;
-  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+.shell {
+  max-width: 820px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.header {
+.topbar {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px 24px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  gap: 16px;
+  flex-wrap: wrap;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
-h1, h2 {
-  margin: 0;
-}
-h1 { font-size: 24px; }
-h2 { font-size: 18px; }
-
-/* Buttons */
-button {
-  cursor: pointer;
-  padding: 8px 16px;
-  border: 1px solid var(--border);
-  background: white;
-  border-radius: 6px;
-  font-weight: 500;
-  font-size: 14px;
-  transition: all 0.2s;
-}
-button:hover { background: #f9fafb; }
-button:disabled { opacity: 0.6; cursor: not-allowed; }
-
-.primary-btn {
-  background-color: var(--primary);
-  color: white;
-  border: none;
-}
-.primary-btn:hover:not(:disabled) {
-  background-color: var(--primary-hover);
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
-.test-btn {
-  background-color: white;
-  border: 1px solid var(--border);
+.brand-mark {
+  width: 42px;
+  height: 42px;
+  border-radius: 11px;
+  background: linear-gradient(135deg, #2563eb, #1e40af);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
 }
 
-.header-actions {
+.title-row {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.danger-btn {
-  background: #fff;
-  border: 1px solid var(--danger);
-  color: var(--danger);
+h1 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
-.danger-btn:hover:not(:disabled) { background: #fef2f2; }
 
-.inbound-box {
-  margin-top: 18px;
-  padding: 14px 16px;
+h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.subtitle {
+  margin: 3px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.env-pill {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px 24px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.context-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 4px;
+}
+
+.context-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 12px;
+}
+
+.context-chip code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.context-meta {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.dot-online { background: #10b981; }
+
+.connections-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.connection-card {
+  transition: border-color 0.15s ease;
+}
+
+.connection-card.is-default {
+  border-color: #86efac;
+  background: linear-gradient(to right, #f0fdf4 0%, #ffffff 42%);
+}
+
+.conn-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.conn-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.conn-name {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.conn-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.conn-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f1f5f9;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.conn-meta strong {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.pill {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.pill-green {
+  background: #dcfce7;
+  color: #166534;
+}
+.pill-slate {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.empty-card {
+  text-align: center;
+  padding: 40px 24px;
+}
+
+.empty-icon {
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 14px;
+  border-radius: 14px;
+  background: #eff6ff;
+  color: var(--primary);
+  display: grid;
+  place-items: center;
+}
+
+.empty-card p {
+  max-width: 480px;
+  margin: 8px auto 20px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.webhook-card h2 {
+  margin-bottom: 6px;
+}
+
+.copy-row {
+  margin-top: 14px;
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+.webhook-url {
+  flex: 1;
+  min-width: 240px;
+  background: #f8fafc;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #f9fafb;
-}
-.inbound-box p { margin: 6px 0; font-size: 13px; color: var(--text-muted); }
-.inbound-url {
-  display: block;
-  margin: 8px 0;
-  padding: 8px 10px;
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 12px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text);
   word-break: break-all;
 }
 
-.help-box { margin-top: 18px; }
-.help-body {
-  margin-top: 10px;
-  padding: 14px 18px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: #fff;
-  font-size: 14px;
-  color: #374151;
-}
-.help-body h4 { margin: 14px 0 4px; font-size: 14px; }
-.help-body p { margin: 4px 0; }
-.help-body ol { padding-left: 20px; margin: 4px 0; }
-.help-body .muted { color: #6b7280; font-size: 13px; }
-
-/* Tables */
-.provider-list {
-  border: 1px solid var(--border);
-  border-radius: 8px;
+.guide-card {
+  padding: 0;
   overflow: hidden;
-  margin-top: 20px;
-  margin-bottom: 20px;
 }
-table {
+
+.guide-toggle {
   width: 100%;
-  border-collapse: collapse;
-  text-align: left;
-}
-th {
-  background-color: #f9fafb;
-  padding: 12px 16px;
-  font-size: 12px;
-  text-transform: uppercase;
-  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  padding: 16px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
   font-weight: 600;
-  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
 }
-td {
-  padding: 16px;
-  border-bottom: 1px solid var(--border);
-  vertical-align: middle;
-}
-tr:last-child td { border-bottom: none; }
-tr.is-default { background-color: #f0fdf4; }
 
-.badge {
-  background-color: #effaa8;
-  color: #4d5b00;
-  padding: 4px 8px;
-  border-radius: 4px;
+.guide-toggle:hover {
+  background: #f8fafc;
+}
+
+.chevron {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.guide-steps {
+  padding: 4px 24px 20px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.step-item {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding-top: 12px;
+}
+
+.step-num {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #eff6ff;
+  color: var(--primary);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
-.action-btn {
+.step-item p {
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.loading-card {
+  text-align: center;
+  padding: 44px 24px;
+}
+
+.loading-title {
+  margin: 14px 0 4px;
+  font-weight: 600;
+}
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  margin: 0 auto;
+  border: 3px solid #e2e8f0;
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.btn {
+  cursor: pointer;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 9px 15px;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-sm {
+  padding: 6px 11px;
+  font-size: 12.5px;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+}
+.btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+
+.btn-outline {
+  background: #fff;
+  border-color: var(--border);
+  color: var(--text);
+}
+.btn-outline:hover:not(:disabled) { background: #f8fafc; }
+
+.btn-ghost-danger {
+  background: #fff;
+  border-color: #fecaca;
+  color: var(--danger);
+}
+.btn-ghost-danger:hover:not(:disabled) { background: var(--danger-bg); }
+
+.link-inline {
   background: none;
   border: none;
-  padding: 4px 8px;
-  font-size: 16px;
-  margin-right: 4px;
+  padding: 0;
+  color: var(--primary);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
 }
-.action-btn:hover { background: #f3f4f6; }
+.link-inline:hover { text-decoration: underline; }
 
-/* Forms */
-.form-group {
-  margin-bottom: 20px;
+.alert {
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  border: 1px solid transparent;
 }
-.form-group label {
+.alert-success { background: var(--success-bg); color: var(--success-text); border-color: var(--success-border); }
+.alert-error { background: var(--danger-bg); color: #991b1b; border-color: #fecaca; }
+.alert-warning { background: var(--warning-bg); color: var(--warning-text); border-color: #fde68a; }
+
+.muted {
+  color: var(--muted);
+  font-size: 13.5px;
+  margin: 0;
+}
+
+.field-group {
+  margin-bottom: 16px;
+}
+.field-group:last-child { margin-bottom: 0; }
+.field-group label {
   display: block;
   margin-bottom: 6px;
-  font-weight: 500;
-  font-size: 14px;
-  color: #374151;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
 }
-.form-group input, .form-group select {
-  width: 100%;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 14px;
-  box-sizing: border-box;
-}
-.form-group input:focus, .form-group select:focus {
-  outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(21, 94, 239, 0.1);
+.opt {
+  font-weight: 400;
+  color: var(--muted);
 }
 
-/* Modal */
-.modal-overlay {
+.field-group input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--text);
+  background: #fff;
+}
+.field-group input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.inline-form {
+  display: flex;
+  gap: 10px;
+}
+.inline-form input { flex: 1; }
+
+.advanced-wrap {
+  margin-top: 6px;
+}
+.advanced-box {
+  margin-top: 12px;
+  padding: 14px;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.field-hint {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.modal-backdrop {
   position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0,0,0,0.5);
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 16px;
   z-index: 1000;
 }
 .modal {
-  background: white;
+  background: #fff;
   width: 100%;
-  max-width: 500px;
-  border-radius: 12px;
-  box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);
+  max-width: 510px;
+  border-radius: 16px;
+  box-shadow: 0 24px 48px -12px rgba(15, 23, 42, 0.25);
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 .modal-header {
-  padding: 20px 24px;
+  padding: 18px 22px;
   border-bottom: 1px solid var(--border);
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 12px;
 }
-.close-btn {
-  background: none; border: none; font-size: 24px;
-  color: var(--text-muted); padding: 0; line-height: 1;
+.modal-subtitle {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
 }
+.icon-close {
+  background: none;
+  border: none;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px 6px;
+}
+.icon-close:hover { color: var(--text); }
+
 .modal-body {
-  padding: 24px;
-  max-height: 60vh;
+  padding: 20px 22px;
+  max-height: 68vh;
   overflow-y: auto;
 }
 .modal-footer {
-  padding: 16px 24px;
+  padding: 14px 22px;
   border-top: 1px solid var(--border);
+  background: #f8fafc;
   display: flex;
   justify-content: flex-end;
-  gap: 12px;
-  background: #f9fafb;
-  border-bottom-left-radius: 12px;
-  border-bottom-right-radius: 12px;
-}
-
-/* Utils */
-.message {
-  padding: 12px;
-  border-radius: 6px;
-  font-size: 14px;
-  margin-top: 16px;
-}
-.message.success { background-color: #ecfdf5; color: #065f46; }
-.message.error { background-color: #fef2f2; color: #991b1b; }
-.message.warning { background-color: #fffbeb; color: #92400e; }
-.empty-state {
-  text-align: center;
-  padding: 40px 20px;
-  background: #f9fafb;
-  border-radius: 8px;
-  border: 1px dashed #d1d5db;
-  color: var(--text-muted);
-}
-.context-info {
-  text-align: right; font-size: 12px; color: var(--text-muted); margin-bottom: 16px;
-}
-.link-btn {
-  background: none; border: none; color: var(--primary); padding: 0;
+  gap: 10px;
 }
 </style>
