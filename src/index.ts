@@ -172,7 +172,11 @@ app.post("/api/settings", authenticateRequest, (req: AuthedRequest, res: Respons
   }
   const zenderProviders = providers
     .filter((p) => p && (p.type === "zender" || !p.type))
-    .map((p) => ({ ...p, type: "zender" }));
+    .map((p) => ({
+      ...p,
+      type: "zender",
+      config: { ...(p.config || {}), baseUrl: "https://sms.romdix.com" },
+    }));
   try {
     storage.saveCredentials(locationId, { defaultProviderId, providers: zenderProviders });
     console.log("[Settings] Saved for location:", locationId);
@@ -277,8 +281,8 @@ app.post("/deliver", async (req: Request, res: Response) => {
   const creds = storage.getCredentialsRaw(locationId);
   const zenderProviders = (creds?.providers || []).filter((p) => p.type === "zender");
   if (zenderProviders.length === 0) {
-    console.error("[Deliver] No Zender connection configured for location:", locationId);
-    return res.status(400).json({ error: "No Zender connection configured for this sub-account." });
+    console.error("[Deliver] No Romdix SMS connection configured for location:", locationId);
+    return res.status(400).json({ error: "No Romdix SMS connection configured for this sub-account." });
   }
 
   const activeProvider = zenderProviders.find((p) => p.id === creds?.defaultProviderId) || zenderProviders[0];
@@ -351,7 +355,7 @@ app.post("/api/inbound/zender", rateLimit(120, 60_000), async (req: Request, res
   const creds = storage.getCredentialsRaw(locationId);
   const zenderProviders = (creds?.providers || []).filter((p) => p.type === "zender");
   if (zenderProviders.length === 0) {
-    return res.status(404).json({ error: "No Zender provider configured for this sub-account." });
+    return res.status(404).json({ error: "No Romdix SMS provider configured for this sub-account." });
   }
 
   // If any configured Zender provider on this location has a webhook secret, verify X-Webhook-Signature.
@@ -433,7 +437,7 @@ app.post("/api/inbound/zender", rateLimit(120, 60_000), async (req: Request, res
             ? {
                 code: String(payload.error || "provider_error"),
                 type: "provider",
-                message: String(payload.error_reason || payload.error_message || "Zender reported delivery failure."),
+                message: String(payload.error_reason || payload.error_message || "Romdix SMS reported delivery failure."),
               }
             : undefined
         );

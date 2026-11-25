@@ -11,7 +11,7 @@
               {{ providers.length > 0 ? 'Connected' : 'Not configured' }}
             </span>
           </div>
-          <p class="subtitle">Zender SMS gateway integration for GoHighLevel</p>
+          <p class="subtitle">Romdix SMS integration for GoHighLevel</p>
         </div>
 
         <div v-if="locationId" class="loc-tag">
@@ -55,23 +55,23 @@
         </section>
 
         <template v-else>
-          <!-- Section 1: Zender Connection -->
+          <!-- Section 1: Romdix SMS Connection -->
           <section class="card">
             <div class="card-head">
               <div>
-                <h2>1. Zender Connection</h2>
-                <p class="muted">Outbound SMS routes through your active Zender workspace.</p>
+                <h2>1. Romdix SMS Connection</h2>
+                <p class="muted">Outbound SMS routes through your active Romdix SMS account.</p>
               </div>
               <button @click="openModal()" class="btn btn-primary">
-                {{ providers.length > 0 ? '+ Add Connection' : '+ Connect Zender' }}
+                {{ providers.length > 0 ? '+ Add Connection' : '+ Connect Romdix SMS' }}
               </button>
             </div>
 
             <div class="card-body">
               <div v-if="providers.length === 0" class="empty-box">
-                <p class="empty-title">No Zender workspace connected</p>
+                <p class="empty-title">No Romdix SMS account connected</p>
                 <p class="muted">
-                  Click <strong>+ Connect Zender</strong>, enter your Zender URL (<code>https://sms.romdix.com</code>) and API Key, then test and save.
+                  Click <strong>+ Connect Romdix SMS</strong> and enter your API Key, then test and save.
                 </p>
               </div>
 
@@ -79,7 +79,7 @@
                 <div v-for="provider in providers" :key="provider.id" class="conn-item">
                   <div class="conn-top">
                     <div class="conn-title-row">
-                      <span class="conn-name">{{ provider.name || 'Zender Gateway' }}</span>
+                      <span class="conn-name">{{ provider.name || 'Romdix SMS' }}</span>
                       <span v-if="defaultProviderId === provider.id" class="badge badge-default">Default</span>
                       <span v-else class="badge">Standby</span>
                     </div>
@@ -106,10 +106,6 @@
                   </div>
 
                   <div class="meta-grid">
-                    <div class="meta-cell">
-                      <span class="meta-label">Site URL</span>
-                      <span class="meta-val mono">{{ provider.config?.baseUrl || 'https://sms.romdix.com' }}</span>
-                    </div>
                     <div class="meta-cell">
                       <span class="meta-label">API Key</span>
                       <span class="meta-val">
@@ -139,20 +135,20 @@
             </div>
           </section>
 
-          <!-- Section 2: Webhook -->
+          <!-- Section 2: 2-Way Webhook (Collapsed by default) -->
           <section v-if="inboundKey" class="card">
-            <div class="card-head">
-              <div>
-                <h2>2. 2-Way Webhook</h2>
-                <p class="muted">
-                  Add this URL in Zender under <strong>Developer → Webhooks → New Webhook</strong> to receive replies and delivery updates.
-                </p>
-              </div>
-            </div>
+            <button type="button" class="accordion-btn" @click="showWebhook = !showWebhook">
+              <span>2. 2-Way Webhook</span>
+              <span class="muted">{{ showWebhook ? 'Hide' : 'Show' }}</span>
+            </button>
 
-            <div class="card-body">
+            <div v-if="showWebhook" class="accordion-body">
+              <p class="muted" style="margin: 12px 0;">
+                Add this URL in Romdix SMS under <strong>Developer → Webhooks → New Webhook</strong> to receive replies and delivery updates.
+              </p>
+
               <div class="copy-row">
-                <code class="url-box">{{ zenderWebhookUrl }}</code>
+                <code class="url-box">{{ webhookUrl }}</code>
                 <button type="button" @click="copyWebhookUrl" class="btn btn-secondary copy-btn">
                   {{ copiedWebhook ? 'Copied' : 'Copy URL' }}
                 </button>
@@ -176,9 +172,9 @@
             </button>
             <div v-if="showHelp" class="guide-body">
               <ol class="guide-list">
-                <li>In Zender, open <strong>Developer → API Keys → New Key</strong>, enable <strong>Account</strong> and <strong>SMS</strong> permissions, and copy the key.</li>
-                <li>Click <strong>+ Connect Zender</strong> above, enter your Zender URL and API Key, click <strong>Test Connection</strong>, and save.</li>
-                <li>Copy the webhook URL from Section 2, open Zender → <strong>Developer → Webhooks → New Webhook</strong>, paste the URL, and select <code>sms.received</code>, <code>sms.sent</code>, <code>sms.delivered</code>, and <code>sms.failed</code>.</li>
+                <li>In Romdix SMS, open <strong>Developer → API Keys → New Key</strong>, enable <strong>Account</strong> and <strong>SMS</strong> permissions, and copy the key.</li>
+                <li>Click <strong>+ Connect Romdix SMS</strong> above, enter your API Key, click <strong>Test Connection</strong>, and save.</li>
+                <li>Open <strong>2. 2-Way Webhook</strong> above, copy the URL, open Romdix SMS → <strong>Developer → Webhooks → New Webhook</strong>, paste the URL, and select <code>sms.received</code>, <code>sms.sent</code>, <code>sms.delivered</code>, and <code>sms.failed</code>.</li>
               </ol>
             </div>
           </section>
@@ -199,8 +195,8 @@
       <div class="modal" role="dialog" aria-modal="true">
         <div class="modal-head">
           <div>
-            <h2>{{ editingProviderId ? 'Edit Zender Connection' : 'Connect Zender' }}</h2>
-            <p class="muted">Enter your Zender workspace URL and API key.</p>
+            <h2>{{ editingProviderId ? 'Edit Romdix SMS Connection' : 'Connect Romdix SMS' }}</h2>
+            <p class="muted">Enter your Romdix SMS API key.</p>
           </div>
           <button type="button" @click="closeModal" class="close-btn" aria-label="Close">&times;</button>
         </div>
@@ -208,21 +204,16 @@
         <div class="modal-body">
           <div class="field">
             <label>Name <span class="opt">(Optional)</span></label>
-            <input v-model="modalSettings.name" type="text" placeholder="e.g. Romdix Zender" />
+            <input v-model="modalSettings.name" type="text" placeholder="e.g. Romdix SMS" />
           </div>
 
           <div class="field">
-            <label>Zender Site URL</label>
-            <input v-model="modalSettings.config.baseUrl" type="url" placeholder="https://sms.romdix.com" />
-          </div>
-
-          <div class="field">
-            <label>Zender API Key</label>
+            <label>Romdix SMS API Key</label>
             <input
               v-model="modalSettings.config.zenderApiKey"
               type="password"
               autocomplete="off"
-              :placeholder="secretPlaceholder('zenderApiKey', 'Paste Bearer API Key from Zender')"
+              :placeholder="secretPlaceholder('zenderApiKey', 'Paste Bearer API Key from Romdix SMS')"
             />
           </div>
 
@@ -238,7 +229,7 @@
                   v-model="modalSettings.config.zenderWebhookSecret"
                   type="password"
                   autocomplete="off"
-                  :placeholder="secretPlaceholder('zenderWebhookSecret', 'From Zender → Webhooks')"
+                  :placeholder="secretPlaceholder('zenderWebhookSecret', 'From Romdix SMS → Webhooks')"
                 />
               </div>
 
@@ -287,6 +278,7 @@ export default {
       ssoError: null,
       inboundKey: null,
       copiedWebhook: false,
+      showWebhook: false,
       showHelp: false,
       showAdvanced: false,
 
@@ -314,7 +306,7 @@ export default {
     };
   },
   computed: {
-    zenderWebhookUrl() {
+    webhookUrl() {
       return `${window.location.origin}/api/inbound/zender?key=${this.inboundKey}`;
     }
   },
@@ -329,7 +321,7 @@ export default {
       if (sim && sender) return `SIM #${sim} / Sender #${sender}`;
       if (sim) return `Android SIM #${sim}`;
       if (sender) return `Provider Sender #${sender}`;
-      return 'Automatic (Zender default)';
+      return 'Automatic (Romdix SMS default)';
     },
     startLoadingTimer() {
       setInterval(() => {
@@ -461,7 +453,6 @@ export default {
         type: 'zender',
         name: '',
         config: {
-          baseUrl: 'https://sms.romdix.com',
           zenderApiKey: '',
           zenderWebhookSecret: '',
           zenderSenderId: '',
@@ -478,7 +469,6 @@ export default {
       const cloned = JSON.parse(JSON.stringify(provider));
       cloned.type = 'zender';
       cloned.config = {
-        baseUrl: 'https://sms.romdix.com',
         zenderApiKey: '',
         zenderWebhookSecret: '',
         zenderSenderId: '',
@@ -509,9 +499,9 @@ export default {
     },
     async saveProvider() {
       const hasApiKey = this.modalSettings.config.zenderApiKey || this.hasSavedSecret('zenderApiKey');
-      if (!this.modalSettings.config.baseUrl || !hasApiKey) {
+      if (!hasApiKey) {
         this.modalError = true;
-        this.modalMessage = 'Zender Site URL and Zender API Key are required.';
+        this.modalMessage = 'Romdix SMS API Key is required.';
         return;
       }
 
@@ -521,7 +511,7 @@ export default {
       const payload = JSON.parse(JSON.stringify(this.modalSettings));
       payload.type = 'zender';
       if (!payload.name || !payload.name.trim()) {
-        payload.name = 'Zender Gateway';
+        payload.name = 'Romdix SMS';
       }
 
       if (this.editingProviderId) {
@@ -541,7 +531,7 @@ export default {
         await this.persistState();
         await this.loadSettings();
         this.closeModal();
-        this.message = 'Zender connection saved.';
+        this.message = 'Romdix SMS connection saved.';
         this.error = false;
       } catch (e) {
         this.modalMessage = `Save failed: ${e.message}`;
@@ -562,7 +552,7 @@ export default {
       }
     },
     async deleteProvider(id) {
-      if (!confirm('Remove this Zender connection?')) return;
+      if (!confirm('Remove this Romdix SMS connection?')) return;
       this.providers = this.providers.filter((p) => p.id !== id);
       if (this.defaultProviderId === id) {
         this.defaultProviderId = this.providers[0]?.id || '';
@@ -573,7 +563,7 @@ export default {
       this.error = false;
     },
     copyWebhookUrl() {
-      const url = this.zenderWebhookUrl;
+      const url = this.webhookUrl;
       const done = () => {
         this.copiedWebhook = true;
         setTimeout(() => {
@@ -601,7 +591,7 @@ export default {
       }
     },
     async disconnect() {
-      if (!confirm('Disconnect this sub-account? Saved Zender credentials will be deleted.')) return;
+      if (!confirm('Disconnect this sub-account? Saved Romdix SMS credentials will be deleted.')) return;
       try {
         const headers = {};
         if (this.sessionToken) headers.Authorization = `Bearer ${this.sessionToken}`;
@@ -943,7 +933,7 @@ h2 {
 
 .meta-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px 18px;
   padding-top: 12px;
   border-top: 1px solid #f3f4f6;
@@ -1052,6 +1042,11 @@ h2 {
   cursor: pointer;
 }
 .accordion-btn:hover { background: #f9fafb; }
+
+.accordion-body {
+  padding: 2px 20px 18px;
+  border-top: 1px solid #f3f4f6;
+}
 
 .guide-body {
   padding: 4px 20px 18px;

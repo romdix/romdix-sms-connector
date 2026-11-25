@@ -2,21 +2,7 @@ import crypto from 'node:crypto';
 import axios from 'axios';
 import { ProviderDeliveryStatus, SMSProvider } from './sms-provider.interface';
 
-const DEFAULT_ZENDER_URL = 'https://sms.romdix.com';
-
-export function normalizeZenderBaseUrl(raw?: string): string {
-  const value = String(raw || DEFAULT_ZENDER_URL).trim().replace(/\/+$/, '');
-  let parsed: URL;
-  try {
-    parsed = new URL(value);
-  } catch {
-    throw new Error('Invalid Zender Site URL. Use a full URL such as https://sms.romdix.com.');
-  }
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-    throw new Error('Zender Site URL must start with https:// or http://.');
-  }
-  return `${parsed.protocol}//${parsed.host}${parsed.pathname}`.replace(/\/+$/, '');
-}
+const ROMDIX_SMS_BASE_URL = 'https://sms.romdix.com';
 
 export function mapZenderStatus(rawStatus: unknown): ProviderDeliveryStatus {
   const status = String(rawStatus || '').trim().toLowerCase();
@@ -70,9 +56,9 @@ function formatZenderError(error: any, fallback: string): string {
 export class ZenderProvider implements SMSProvider {
   async sendSMS(to: string, message: string, config: any) {
     if (!config?.zenderApiKey) {
-      throw new Error('Zender API Key is required. Please update settings.');
+      throw new Error('Romdix SMS API Key is required. Please update settings.');
     }
-    const baseUrl = normalizeZenderBaseUrl(config.baseUrl);
+    const baseUrl = ROMDIX_SMS_BASE_URL;
     const payload: Record<string, any> = {
       to: String(to || '').trim(),
       body: String(message || ''),
@@ -81,7 +67,7 @@ export class ZenderProvider implements SMSProvider {
     const senderId = String(config.zenderSenderId || '').trim();
     if (senderId) {
       if (!/^\d+$/.test(senderId)) {
-        throw new Error('Zender Sender ID must be the numeric Sender ID from Zender (or leave blank for auto).');
+        throw new Error('Sender ID must be the numeric Sender ID from Romdix SMS (or leave blank for auto).');
       }
       payload.sender_id = Number(senderId);
     }
@@ -89,7 +75,7 @@ export class ZenderProvider implements SMSProvider {
     const simId = String(config.zenderSimId || '').trim();
     if (simId) {
       if (!/^\d+$/.test(simId)) {
-        throw new Error('Zender SIM ID must be a numeric SIM ID from Zender (or leave blank for auto).');
+        throw new Error('SIM ID must be a numeric SIM ID from Romdix SMS (or leave blank for auto).');
       }
       payload.from_sim_id = Number(simId);
     }
@@ -105,17 +91,17 @@ export class ZenderProvider implements SMSProvider {
       });
       return response.data;
     } catch (error: any) {
-      const msg = formatZenderError(error, 'Failed to send SMS via Zender');
-      console.error('Zender API Error:', msg);
+      const msg = formatZenderError(error, 'Failed to send SMS via Romdix SMS');
+      console.error('Romdix SMS API Error:', msg);
       throw new Error(msg);
     }
   }
 
   async testConnection(config: any): Promise<boolean> {
     if (!config?.zenderApiKey) {
-      throw new Error('Zender API Key is required.');
+      throw new Error('Romdix SMS API Key is required.');
     }
-    const baseUrl = normalizeZenderBaseUrl(config.baseUrl);
+    const baseUrl = ROMDIX_SMS_BASE_URL;
     const headers = {
       Authorization: `Bearer ${config.zenderApiKey}`,
       Accept: 'application/json',
@@ -127,7 +113,7 @@ export class ZenderProvider implements SMSProvider {
     } catch (error: any) {
       const status = error?.response?.status;
       if (status === 401) {
-        throw new Error('Invalid Zender API Key.');
+        throw new Error('Invalid Romdix SMS API Key.');
       }
       // If the key has SMS permissions without account.view, fall back to SMS listing.
       if (status === 403) {
@@ -140,15 +126,15 @@ export class ZenderProvider implements SMSProvider {
           return true;
         } catch (smsError: any) {
           if (smsError?.response?.status === 401) {
-            throw new Error('Invalid Zender API Key.');
+            throw new Error('Invalid Romdix SMS API Key.');
           }
           if (smsError?.response?.status === 403) {
-            throw new Error('Zender API Key is missing SMS/Account permissions or API Access on the plan.');
+            throw new Error('Romdix SMS API Key is missing SMS/Account permissions or API Access on the plan.');
           }
-          throw new Error(formatZenderError(smsError, 'Zender connection test failed.'));
+          throw new Error(formatZenderError(smsError, 'Romdix SMS connection test failed.'));
         }
       }
-      throw new Error(formatZenderError(error, 'Could not reach Zender server.'));
+      throw new Error(formatZenderError(error, 'Could not reach Romdix SMS server.'));
     }
   }
 
@@ -159,9 +145,9 @@ export class ZenderProvider implements SMSProvider {
 
   async getStatus(messageId: string, config: any): Promise<ProviderDeliveryStatus> {
     if (!config?.zenderApiKey) {
-      throw new Error('Zender API Key missing.');
+      throw new Error('Romdix SMS API Key missing.');
     }
-    const baseUrl = normalizeZenderBaseUrl(config.baseUrl);
+    const baseUrl = ROMDIX_SMS_BASE_URL;
     const response = await axios.get(`${baseUrl}/api/v1/messages/${encodeURIComponent(messageId)}`, {
       headers: {
         Authorization: `Bearer ${config.zenderApiKey}`,
