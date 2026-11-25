@@ -1,186 +1,240 @@
 <template>
-  <div id="app">
+  <div id="app" :class="['theme-root', darkMode ? 'theme-dark' : 'theme-light']">
     <div class="shell">
-      <!-- Top Header -->
-      <header class="topbar">
-        <div class="brand">
-          <div class="brand-mark" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+      <!-- High-Contrast Hero Header -->
+      <header class="hero">
+        <div class="hero-left">
+          <div class="hero-logo" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
           </div>
           <div>
-            <div class="title-row">
+            <div class="hero-title-row">
               <h1>Romdix SMS Connector</h1>
-              <span class="env-pill">Zender</span>
+              <span v-if="!loading && locationId" :class="['status-badge', providers.length > 0 ? 'status-ok' : 'status-warn']">
+                <span class="status-dot"></span>
+                {{ providers.length > 0 ? 'Connected to Zender' : 'Setup Required' }}
+              </span>
             </div>
-            <p class="subtitle">Two-way SMS &amp; live delivery tracking connected to your Zender gateway</p>
+            <p class="hero-sub">Send &amp; receive SMS in GoHighLevel through your Zender gateway</p>
           </div>
         </div>
 
-        <div class="topbar-actions" v-if="!loading && locationId">
-          <button @click="openModal()" class="btn btn-primary">+ Add Zender</button>
-          <button v-if="providers.length > 0" @click="disconnect" class="btn btn-ghost-danger">Disconnect</button>
+        <div class="hero-right">
+          <span v-if="locationId" class="loc-pill" :title="'Sub-account ID: ' + locationId">
+            ID: <code>{{ locationId }}</code>
+          </span>
+          <button
+            type="button"
+            class="theme-btn"
+            @click="toggleTheme"
+            :title="darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'"
+          >
+            {{ darkMode ? '☀ Light' : '☾ Dark' }}
+          </button>
         </div>
       </header>
 
       <!-- Loading -->
-      <div v-if="loading" class="card loading-card">
+      <div v-if="loading" class="panel loading-panel">
         <div class="spinner"></div>
-        <p class="loading-title">Connecting to sub-account…</p>
-        <p v-if="loadingTime > 2" class="muted">Still verifying CRM session…</p>
+        <p class="loading-title">Connecting to GoHighLevel sub-account…</p>
+        <p v-if="loadingTime > 2" class="text-muted">Verifying your CRM session…</p>
       </div>
 
-      <!-- Main Body -->
-      <main v-else class="stack">
-        <div v-if="ssoError" class="alert alert-error">
-          <strong>Authentication Notice:</strong> {{ ssoError }}
+      <!-- Content -->
+      <main v-else class="content-stack">
+        <!-- Auth Notice -->
+        <div v-if="ssoError" class="banner banner-error">
+          <strong>Session issue:</strong> {{ ssoError }}
         </div>
 
-        <!-- Manual Location Fallback -->
-        <section v-if="!locationId" class="card">
-          <div class="alert alert-warning" style="margin-bottom: 16px;">
-            Could not automatically detect the CRM Location ID. Enter it below to load settings.
+        <!-- Global Feedback Banner -->
+        <div v-if="message" :class="['banner', error ? 'banner-error' : 'banner-success']">
+          <span>{{ message }}</span>
+          <button type="button" class="banner-close" @click="message = ''" aria-label="Dismiss">&times;</button>
+        </div>
+
+        <!-- Manual Location Fallback (only when opened outside GHL iframe) -->
+        <section v-if="!locationId" class="panel">
+          <div class="panel-head">
+            <div class="step-badge step-blue">!</div>
+            <div>
+              <h2>Enter Sub-Account ID</h2>
+              <p class="text-muted">Open this page inside GoHighLevel for automatic login, or enter a Location ID below.</p>
+            </div>
           </div>
-          <div class="field-group">
-            <label>CRM Location ID</label>
-            <div class="inline-form">
+          <div class="panel-body">
+            <div class="inline-row">
               <input v-model="manualIdInput" type="text" placeholder="e.g. Rh3O9aC398g336hh4Ljx" @keyup.enter="useManualId" />
-              <button @click="useManualId" class="btn btn-primary">Load Settings</button>
+              <button @click="useManualId" class="btn btn-primary">Load</button>
             </div>
           </div>
         </section>
 
         <template v-else>
-          <!-- Context Strip -->
-          <div class="context-bar">
-            <div class="context-chip">
-              <span class="dot dot-online"></span>
-              <span>Sub-account:</span>
-              <code>{{ locationId }}</code>
-              <button @click="resetLocation" class="link-inline">Switch</button>
-            </div>
-            <span class="context-meta" v-if="providers.length > 0">
-              {{ providers.length }} {{ providers.length === 1 ? 'connection' : 'connections' }} configured
-            </span>
-          </div>
-
-          <!-- Global Toast -->
-          <div v-if="message" :class="['alert', error ? 'alert-error' : 'alert-success']">
-            {{ message }}
-          </div>
-
-          <!-- Empty State -->
-          <section v-if="providers.length === 0" class="card empty-card">
-            <div class="empty-icon">
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                <path d="m9 12 2 2 4-4" />
-              </svg>
-            </div>
-            <h2>Connect your Zender Gateway</h2>
-            <p class="muted">
-              Link your Zender URL and API key so every SMS from this CRM sub-account sends through Zender with real-time replies and delivery receipts.
-            </p>
-            <button @click="openModal()" class="btn btn-primary">+ Connect Zender</button>
-          </section>
-
-          <!-- Connections List -->
-          <section v-else class="connections-grid">
-            <article
-              v-for="provider in providers"
-              :key="provider.id"
-              :class="['card connection-card', { 'is-default': defaultProviderId === provider.id }]"
-            >
-              <div class="conn-main">
-                <div class="conn-head">
-                  <div class="conn-title-wrap">
-                    <span class="conn-name">{{ provider.name || 'Zender Gateway' }}</span>
-                    <span v-if="defaultProviderId === provider.id" class="pill pill-green">Default Active</span>
-                    <span v-else class="pill pill-slate">Standby</span>
-                  </div>
-                  <div class="conn-actions">
-                    <button
-                      v-if="defaultProviderId !== provider.id"
-                      @click="setDefaultProvider(provider.id)"
-                      :disabled="saving"
-                      class="btn btn-sm btn-outline"
-                    >
-                      Set Default
-                    </button>
-                    <button @click="editProvider(provider)" class="btn btn-sm btn-outline">Edit</button>
-                    <button @click="deleteProvider(provider.id)" class="btn btn-sm btn-ghost-danger" title="Remove connection">Delete</button>
-                  </div>
-                </div>
-
-                <div class="conn-meta">
-                  <span class="meta-item">
-                    <strong>Site:</strong> {{ provider.config?.baseUrl || 'https://sms.romdix.com' }}
-                  </span>
-                  <span class="meta-item">
-                    <strong>Webhook Auth:</strong>
-                    {{ hasConfigSecret(provider, 'zenderWebhookSecret') ? 'HMAC Secret + URL Key' : 'URL Key' }}
-                  </span>
-                  <span v-if="provider.config?.zenderSimId" class="meta-item">
-                    <strong>SIM ID:</strong> {{ provider.config.zenderSimId }}
-                  </span>
-                  <span v-if="provider.config?.zenderSenderId" class="meta-item">
-                    <strong>Sender ID:</strong> {{ provider.config.zenderSenderId }}
-                  </span>
+          <!-- STEP 1: ZENDER CONNECTION -->
+          <section class="panel panel-accent-blue">
+            <div class="panel-head">
+              <div class="panel-head-left">
+                <div class="step-badge step-blue">1</div>
+                <div>
+                  <h2>Zender Gateway Connection</h2>
+                  <p class="text-muted">Where outbound SMS from this GoHighLevel sub-account is sent.</p>
                 </div>
               </div>
-            </article>
-          </section>
-
-          <!-- Two-Way Webhook Card -->
-          <section v-if="inboundKey" class="card webhook-card">
-            <div class="card-header-row">
-              <div>
-                <h2>Zender 2-Way Webhook</h2>
-                <p class="muted">
-                  Paste this URL in Zender under <strong>Developer → Webhooks → New Webhook</strong> and select
-                  <code>sms.received</code>, <code>sms.sent</code>, <code>sms.delivered</code>, and <code>sms.failed</code>.
-                </p>
-              </div>
-            </div>
-            <div class="copy-row">
-              <code class="webhook-url">{{ zenderWebhookUrl }}</code>
-              <button @click="copyWebhookUrl" class="btn btn-outline copy-btn">
-                {{ copiedWebhook ? 'Copied!' : 'Copy URL' }}
+              <button @click="openModal()" class="btn btn-primary">
+                {{ providers.length > 0 ? '+ Add Another' : '+ Connect Zender' }}
               </button>
             </div>
-          </section>
 
-          <!-- Setup Guide Accordion -->
-          <section class="card guide-card">
-            <button type="button" class="guide-toggle" @click="showHelp = !showHelp">
-              <span>Quick Setup Guide (3 Steps)</span>
-              <span class="chevron">{{ showHelp ? '▲' : '▼' }}</span>
-            </button>
-            <div v-if="showHelp" class="guide-steps">
-              <div class="step-item">
-                <span class="step-num">1</span>
-                <div>
-                  <strong>Create an API Key in Zender</strong>
-                  <p>Open Zender → <strong>Developer → API Keys → New Key</strong>, tick <strong>Account</strong> and <strong>SMS</strong> permissions, and copy the key.</p>
-                </div>
+            <div class="panel-body">
+              <!-- Empty State -->
+              <div v-if="providers.length === 0" class="empty-box">
+                <div class="empty-title">No Zender account connected yet</div>
+                <p class="text-muted">
+                  Click <strong>+ Connect Zender</strong> above, enter your Zender URL (<code>https://sms.romdix.com</code>) and API Key, then test and save.
+                </p>
               </div>
-              <div class="step-item">
-                <span class="step-num">2</span>
-                <div>
-                  <strong>Connect &amp; Test here</strong>
-                  <p>Click <strong>+ Add Zender</strong> above, enter your Zender URL and API key, run <strong>Test Connection</strong>, and save.</p>
-                </div>
-              </div>
-              <div class="step-item">
-                <span class="step-num">3</span>
-                <div>
-                  <strong>Enable Inbound &amp; Delivery Status</strong>
-                  <p>Add the <strong>Zender 2-Way Webhook</strong> URL shown above in Zender (<strong>Developer → Webhooks</strong>) and tick <code>sms.received</code>, <code>sms.sent</code>, <code>sms.delivered</code>, and <code>sms.failed</code>. Optionally paste the Signing Secret into the connection's Advanced Options.</p>
+
+              <!-- Connected Accounts -->
+              <div v-else class="conn-list">
+                <div
+                  v-for="provider in providers"
+                  :key="provider.id"
+                  :class="['conn-card', { 'conn-active': defaultProviderId === provider.id }]"
+                >
+                  <div class="conn-top">
+                    <div class="conn-identity">
+                      <span class="conn-title">{{ provider.name || 'Zender Gateway' }}</span>
+                      <span v-if="defaultProviderId === provider.id" class="tag tag-green">Active Default</span>
+                      <span v-else class="tag tag-neutral">Standby</span>
+                    </div>
+                    <div class="conn-btns">
+                      <button
+                        v-if="defaultProviderId !== provider.id"
+                        @click="setDefaultProvider(provider.id)"
+                        :disabled="saving"
+                        class="btn btn-sm btn-secondary"
+                      >
+                        Make Default
+                      </button>
+                      <button
+                        @click="testSavedProvider(provider)"
+                        :disabled="testingProviderId === provider.id"
+                        class="btn btn-sm btn-secondary"
+                      >
+                        {{ testingProviderId === provider.id ? 'Testing…' : 'Test' }}
+                      </button>
+                      <button @click="editProvider(provider)" class="btn btn-sm btn-secondary">Edit</button>
+                      <button @click="deleteProvider(provider.id)" class="btn btn-sm btn-danger-outline">Delete</button>
+                    </div>
+                  </div>
+
+                  <div class="info-grid">
+                    <div class="info-cell">
+                      <span class="info-label">Zender Site URL</span>
+                      <span class="info-value mono">{{ provider.config?.baseUrl || 'https://sms.romdix.com' }}</span>
+                    </div>
+                    <div class="info-cell">
+                      <span class="info-label">API Key</span>
+                      <span class="info-value">
+                        <span v-if="hasConfigSecret(provider, 'zenderApiKey')" class="ok-text">● Saved (Encrypted)</span>
+                        <span v-else class="warn-text">● Not set</span>
+                      </span>
+                    </div>
+                    <div class="info-cell">
+                      <span class="info-label">SMS Routing</span>
+                      <span class="info-value">{{ routingSummary(provider) }}</span>
+                    </div>
+                    <div class="info-cell">
+                      <span class="info-label">Webhook Verification</span>
+                      <span class="info-value">
+                        {{ hasConfigSecret(provider, 'zenderWebhookSecret') ? 'URL Key + Signing Secret' : 'URL Key' }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="cardTestStatus[provider.id]"
+                    :class="['card-feedback', cardTestStatus[provider.id].ok ? 'feedback-ok' : 'feedback-err']"
+                  >
+                    {{ cardTestStatus[provider.id].text }}
+                  </div>
                 </div>
               </div>
             </div>
           </section>
+
+          <!-- STEP 2: 2-WAY WEBHOOK -->
+          <section v-if="inboundKey" class="panel panel-accent-indigo">
+            <div class="panel-head">
+              <div class="panel-head-left">
+                <div class="step-badge step-indigo">2</div>
+                <div>
+                  <h2>2-Way Replies &amp; Delivery Status</h2>
+                  <p class="text-muted">Add this webhook inside Zender so customer replies and delivery reports appear in GoHighLevel.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel-body">
+              <label class="section-label">Your Zender Webhook URL</label>
+              <div class="webhook-bar">
+                <code class="webhook-code">{{ zenderWebhookUrl }}</code>
+                <button type="button" @click="copyWebhookUrl" class="btn btn-primary copy-btn">
+                  {{ copiedWebhook ? '✓ Copied!' : 'Copy URL' }}
+                </button>
+              </div>
+
+              <div class="events-box">
+                <span class="events-title">In Zender → Developer → Webhooks → New Webhook, tick these 4 events:</span>
+                <div class="event-chips">
+                  <span class="event-chip"><code>sms.received</code> <em>Replies</em></span>
+                  <span class="event-chip"><code>sms.sent</code> <em>Sent</em></span>
+                  <span class="event-chip"><code>sms.delivered</code> <em>Delivered</em></span>
+                  <span class="event-chip"><code>sms.failed</code> <em>Failed</em></span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- STEP 3: QUICK CHECKLIST & ACCOUNT CONTROLS -->
+          <section class="panel panel-compact">
+            <button type="button" class="accordion-btn" @click="showHelp = !showHelp">
+              <span class="accordion-left">
+                <span class="step-badge step-slate">?</span>
+                <span><strong>Setup Checklist</strong> — How to create your Zender API Key &amp; Webhook</span>
+              </span>
+              <span class="accordion-arrow">{{ showHelp ? 'Hide ▲' : 'Show ▼' }}</span>
+            </button>
+
+            <div v-if="showHelp" class="checklist-body">
+              <ol class="checklist">
+                <li>
+                  <strong>Get your Zender API Key:</strong>
+                  In Zender, open <strong>Developer → API Keys → New Key</strong>, tick <strong>Account</strong> and <strong>SMS</strong> permissions, click Create, and copy the key.
+                </li>
+                <li>
+                  <strong>Connect above (Step 1):</strong>
+                  Click <strong>+ Connect Zender</strong>, paste your Zender URL and API Key, click <strong>Test Connection</strong>, then <strong>Save Connection</strong>.
+                </li>
+                <li>
+                  <strong>Connect the Webhook (Step 2):</strong>
+                  Copy the webhook URL above, open Zender → <strong>Developer → Webhooks → New Webhook</strong>, paste the URL, tick the 4 SMS events, and save.
+                </li>
+              </ol>
+            </div>
+          </section>
+
+          <!-- Footer Danger / Reset Row -->
+          <footer class="footer-bar">
+            <button type="button" @click="resetLocation" class="footer-link">Switch Sub-Account</button>
+            <button v-if="providers.length > 0" type="button" @click="disconnect" class="footer-danger">
+              Disconnect Sub-Account
+            </button>
+          </footer>
         </template>
       </main>
     </div>
@@ -188,77 +242,77 @@
     <!-- Add / Edit Zender Modal -->
     <div v-if="showModal" class="modal-backdrop" @click.self="closeModal">
       <div class="modal" role="dialog" aria-modal="true">
-        <div class="modal-header">
+        <div class="modal-head">
           <div>
             <h2>{{ editingProviderId ? 'Edit Zender Connection' : 'Connect Zender Gateway' }}</h2>
-            <p class="modal-subtitle">Enter your Zender workspace URL and API key.</p>
+            <p class="text-muted">Only the Site URL and API Key are required.</p>
           </div>
-          <button @click="closeModal" class="icon-close" aria-label="Close">&times;</button>
+          <button type="button" @click="closeModal" class="modal-close" aria-label="Close">&times;</button>
         </div>
 
         <div class="modal-body">
-          <div class="field-group">
+          <div class="field">
             <label>Connection Name <span class="opt">(Optional)</span></label>
             <input v-model="modalSettings.name" type="text" placeholder="e.g. Romdix Zender" />
           </div>
 
-          <div class="field-group">
-            <label>Zender Site URL</label>
+          <div class="field">
+            <label>Zender Site URL <span class="req">*</span></label>
             <input v-model="modalSettings.config.baseUrl" type="url" placeholder="https://sms.romdix.com" />
           </div>
 
-          <div class="field-group">
-            <label>Zender API Key</label>
+          <div class="field">
+            <label>Zender API Key <span class="req">*</span></label>
             <input
               v-model="modalSettings.config.zenderApiKey"
               type="password"
               autocomplete="off"
-              :placeholder="secretPlaceholder('zenderApiKey', 'Paste Bearer API key from Zender')"
+              :placeholder="secretPlaceholder('zenderApiKey', 'Paste Bearer API Key from Zender')"
             />
           </div>
 
-          <div class="advanced-wrap">
-            <button type="button" class="link-inline" @click="showAdvanced = !showAdvanced">
-              {{ showAdvanced ? 'Hide Advanced Options' : 'Show Advanced Options (Webhook Secret / Routing IDs)' }}
+          <div class="adv-section">
+            <button type="button" class="adv-toggle" @click="showAdvanced = !showAdvanced">
+              <span>{{ showAdvanced ? '▾ Hide Optional Settings' : '▸ Optional Settings (Webhook Secret, SIM ID, Sender ID)' }}</span>
             </button>
 
-            <div v-if="showAdvanced" class="advanced-box">
-              <div class="field-group">
+            <div v-if="showAdvanced" class="adv-card">
+              <div class="field">
                 <label>Webhook Signing Secret <span class="opt">(Optional)</span></label>
                 <input
                   v-model="modalSettings.config.zenderWebhookSecret"
                   type="password"
                   autocomplete="off"
-                  :placeholder="secretPlaceholder('zenderWebhookSecret', 'From Zender -> Developer -> Webhooks')"
+                  :placeholder="secretPlaceholder('zenderWebhookSecret', 'From Zender → Webhooks')"
                 />
               </div>
 
               <div class="two-col">
-                <div class="field-group">
+                <div class="field">
                   <label>Zender SIM ID <span class="opt">(Optional)</span></label>
-                  <input v-model="modalSettings.config.zenderSimId" type="text" placeholder="Auto (leave blank)" />
+                  <input v-model="modalSettings.config.zenderSimId" type="text" placeholder="Leave blank for auto" />
                 </div>
-                <div class="field-group">
+                <div class="field">
                   <label>Zender Sender ID <span class="opt">(Optional)</span></label>
-                  <input v-model="modalSettings.config.zenderSenderId" type="text" placeholder="Auto (leave blank)" />
+                  <input v-model="modalSettings.config.zenderSenderId" type="text" placeholder="Leave blank for auto" />
                 </div>
               </div>
-              <p class="field-hint">
-                Leave SIM ID and Sender ID blank so Zender uses its configured routing rules. Only enter numeric IDs if you want to pin a specific SIM or default provider sender.
+              <p class="hint">
+                Leave SIM ID and Sender ID empty unless you want to pin a specific numeric ID from Zender.
               </p>
             </div>
           </div>
 
-          <div v-if="modalMessage" :class="['alert', modalError ? 'alert-error' : 'alert-success']" style="margin-top: 14px;">
+          <div v-if="modalMessage" :class="['banner', modalError ? 'banner-error' : 'banner-success']" style="margin-top: 14px;">
             {{ modalMessage }}
           </div>
         </div>
 
-        <div class="modal-footer">
-          <button @click="testConnection" :disabled="testing || saving" class="btn btn-outline">
+        <div class="modal-foot">
+          <button type="button" @click="testConnection" :disabled="testing || saving" class="btn btn-secondary">
             {{ testing ? 'Testing…' : 'Test Connection' }}
           </button>
-          <button @click="saveProvider" :disabled="saving || testing" class="btn btn-primary">
+          <button type="button" @click="saveProvider" :disabled="saving || testing" class="btn btn-primary">
             {{ saving ? 'Saving…' : 'Save Connection' }}
           </button>
         </div>
@@ -271,7 +325,13 @@
 export default {
   name: 'App',
   data() {
+    let savedDark = false;
+    try {
+      savedDark = localStorage.getItem('romdix_sms_theme') === 'dark';
+    } catch { /* ignore iframe storage restrictions */ }
+
     return {
+      darkMode: savedDark,
       locationId: null,
       manualIdInput: '',
       sessionToken: null,
@@ -296,6 +356,8 @@ export default {
       loadingTime: 0,
       saving: false,
       testing: false,
+      testingProviderId: null,
+      cardTestStatus: {},
       message: '',
       error: false,
       modalMessage: '',
@@ -312,6 +374,20 @@ export default {
     this.initContext();
   },
   methods: {
+    toggleTheme() {
+      this.darkMode = !this.darkMode;
+      try {
+        localStorage.setItem('romdix_sms_theme', this.darkMode ? 'dark' : 'light');
+      } catch { /* ignore */ }
+    },
+    routingSummary(provider) {
+      const sim = provider?.config?.zenderSimId;
+      const sender = provider?.config?.zenderSenderId;
+      if (sim && sender) return `SIM #${sim} / Sender #${sender}`;
+      if (sim) return `Android SIM #${sim}`;
+      if (sender) return `Provider Sender #${sender}`;
+      return 'Automatic (Zender default)';
+    },
     startLoadingTimer() {
       setInterval(() => {
         if (this.loading) this.loadingTime++;
@@ -412,6 +488,7 @@ export default {
       this.providers = [];
       this.defaultProviderId = '';
       this.message = '';
+      this.cardTestStatus = {};
     },
     async loadSettings() {
       try {
@@ -521,7 +598,7 @@ export default {
         await this.persistState();
         await this.loadSettings();
         this.closeModal();
-        this.message = 'Zender connection saved.';
+        this.message = 'Zender connection saved successfully.';
         this.error = false;
       } catch (e) {
         this.modalMessage = `Save failed: ${e.message}`;
@@ -535,7 +612,7 @@ export default {
       this.saving = true;
       try {
         await this.persistState();
-        this.message = 'Default Zender connection updated.';
+        this.message = 'Active default Zender connection updated.';
         this.error = false;
       } finally {
         this.saving = false;
@@ -547,18 +624,37 @@ export default {
       if (this.defaultProviderId === id) {
         this.defaultProviderId = this.providers[0]?.id || '';
       }
+      delete this.cardTestStatus[id];
       await this.persistState();
       this.message = 'Connection removed.';
       this.error = false;
     },
     copyWebhookUrl() {
+      const url = this.zenderWebhookUrl;
+      const done = () => {
+        this.copiedWebhook = true;
+        setTimeout(() => {
+          this.copiedWebhook = false;
+        }, 2000);
+      };
       if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(this.zenderWebhookUrl).then(() => {
-          this.copiedWebhook = true;
-          setTimeout(() => {
-            this.copiedWebhook = false;
-          }, 2000);
-        });
+        navigator.clipboard.writeText(url).then(done).catch(() => this.fallbackCopy(url, done));
+      } else {
+        this.fallbackCopy(url, done);
+      }
+    },
+    fallbackCopy(text, onSuccess) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        onSuccess();
+      } finally {
+        document.body.removeChild(ta);
       }
     },
     async disconnect() {
@@ -570,7 +666,8 @@ export default {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         this.providers = [];
         this.defaultProviderId = '';
-        this.message = 'Disconnected. Credentials deleted.';
+        this.cardTestStatus = {};
+        this.message = 'Disconnected. Saved credentials deleted.';
         this.error = false;
       } catch (e) {
         this.message = `Disconnect failed: ${e.message}`;
@@ -614,6 +711,33 @@ export default {
         throw e;
       }
     },
+    async testSavedProvider(provider) {
+      this.testingProviderId = provider.id;
+      this.cardTestStatus = { ...this.cardTestStatus, [provider.id]: null };
+      try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (this.sessionToken) headers.Authorization = `Bearer ${this.sessionToken}`;
+        const res = await fetch('/api/test-connection', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            providerType: 'zender',
+            providerId: provider.id,
+            ...(provider.config || {})
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          this.cardTestStatus = { ...this.cardTestStatus, [provider.id]: { ok: true, text: '✓ Connection verified with Zender.' } };
+        } else {
+          this.cardTestStatus = { ...this.cardTestStatus, [provider.id]: { ok: false, text: `✕ ${data.error || 'Connection test failed.'}` } };
+        }
+      } catch (e) {
+        this.cardTestStatus = { ...this.cardTestStatus, [provider.id]: { ok: false, text: `✕ ${e.message}` } };
+      } finally {
+        this.testingProviderId = null;
+      }
+    },
     async testConnection() {
       this.testing = true;
       this.modalMessage = '';
@@ -648,561 +772,753 @@ export default {
 </script>
 
 <style>
-:root {
-  --bg: #f8fafc;
-  --surface: #ffffff;
-  --text: #0f172a;
-  --muted: #64748b;
-  --border: #e2e8f0;
-  --primary: #2563eb;
-  --primary-hover: #1d4ed8;
-  --success-bg: #ecfdf5;
-  --success-text: #065f46;
-  --success-border: #a7f3d0;
-  --danger: #dc2626;
-  --danger-bg: #fef2f2;
-  --warning-bg: #fffbeb;
-  --warning-text: #92400e;
+* {
+  box-sizing: border-box;
 }
-
-* { box-sizing: border-box; }
 
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--text);
   font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
-#app {
-  padding: 28px 16px 48px;
+.theme-light {
+  --page-bg: #e9eef5;
+  --panel-bg: #ffffff;
+  --panel-subtle: #f8fafc;
+  --panel-border: #cbd5e1;
+  --divider: #e2e8f0;
+  --text: #0f172a;
+  --text-muted: #475569;
+  --input-bg: #ffffff;
+  --input-border: #cbd5e1;
+  --code-bg: #0f172a;
+  --code-text: #f1f5f9;
+  --chip-bg: #f1f5f9;
+  --chip-border: #cbd5e1;
+  --active-bg: #f0fdf4;
+  --active-border: #4ade80;
+  --shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+}
+
+.theme-dark {
+  --page-bg: #0b1120;
+  --panel-bg: #111827;
+  --panel-subtle: #1e293b;
+  --panel-border: #334155;
+  --divider: #1f2937;
+  --text: #f8fafc;
+  --text-muted: #94a3b8;
+  --input-bg: #0f172a;
+  --input-border: #334155;
+  --code-bg: #020617;
+  --code-text: #e2e8f0;
+  --chip-bg: #1e293b;
+  --chip-border: #334155;
+  --active-bg: #052e16;
+  --active-border: #22c55e;
+  --shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.theme-root {
+  min-height: 100vh;
+  background: var(--page-bg);
+  color: var(--text);
+  padding: 24px 16px 48px;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 .shell {
-  max-width: 820px;
+  max-width: 840px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 
-.topbar {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 20px 24px;
+/* Dark Slate Hero Header — strong contrast in both Light & Dark modes */
+.hero {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  color: #f8fafc;
+  border-radius: 16px;
+  padding: 22px 24px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 16px;
   flex-wrap: wrap;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.18);
 }
 
-.brand {
+.hero-left {
   display: flex;
   align-items: center;
   gap: 14px;
 }
 
-.brand-mark {
-  width: 42px;
-  height: 42px;
-  border-radius: 11px;
-  background: linear-gradient(135deg, #2563eb, #1e40af);
+.hero-logo {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #2563eb;
   color: #fff;
   display: grid;
   place-items: center;
   flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.45);
 }
 
-.title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-h1 {
-  margin: 0;
-  font-size: 19px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-
-h2 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.subtitle {
-  margin: 3px 0 0;
-  font-size: 13px;
-  color: var(--muted);
-}
-
-.env-pill {
-  background: #eff6ff;
-  color: #1d4ed8;
-  border: 1px solid #bfdbfe;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 999px;
-}
-
-.topbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.stack {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 20px 24px;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-}
-
-.context-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 0 4px;
-}
-
-.context-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
-  color: var(--muted);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 5px 12px;
-}
-
-.context-chip code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: var(--text);
-  font-size: 12px;
-}
-
-.context-meta {
-  font-size: 12.5px;
-  color: var(--muted);
-}
-
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  display: inline-block;
-}
-.dot-online { background: #10b981; }
-
-.connections-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.connection-card {
-  transition: border-color 0.15s ease;
-}
-
-.connection-card.is-default {
-  border-color: #86efac;
-  background: linear-gradient(to right, #f0fdf4 0%, #ffffff 42%);
-}
-
-.conn-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.conn-title-wrap {
+.hero-title-row {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
 }
 
-.conn-name {
-  font-size: 16px;
-  font-weight: 600;
+.hero h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #ffffff;
 }
 
-.conn-actions {
-  display: flex;
+.hero-sub {
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  color: #cbd5e1;
+}
+
+.status-badge {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-}
-
-.conn-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid #f1f5f9;
-  font-size: 13px;
-  color: var(--muted);
-}
-
-.conn-meta strong {
-  color: var(--text);
-  font-weight: 500;
-}
-
-.pill {
-  font-size: 11.5px;
+  gap: 6px;
+  font-size: 12px;
   font-weight: 600;
-  padding: 3px 9px;
+  padding: 3px 10px;
   border-radius: 999px;
 }
-.pill-green {
-  background: #dcfce7;
-  color: #166534;
-}
-.pill-slate {
-  background: #f1f5f9;
-  color: #475569;
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
 }
 
-.empty-card {
-  text-align: center;
-  padding: 40px 24px;
+.status-ok {
+  background: rgba(16, 185, 129, 0.18);
+  color: #6ee7b7;
+  border: 1px solid rgba(52, 211, 153, 0.4);
+}
+.status-ok .status-dot { background: #34d399; }
+
+.status-warn {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fcd34d;
+  border: 1px solid rgba(251, 191, 36, 0.45);
+}
+.status-warn .status-dot { background: #fbbf24; }
+
+.hero-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
-.empty-icon {
-  width: 52px;
-  height: 52px;
-  margin: 0 auto 14px;
+.loc-pill {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #cbd5e1;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+
+.loc-pill code {
+  color: #ffffff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.theme-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #f8fafc;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.theme-btn:hover { background: rgba(255, 255, 255, 0.18); }
+
+/* Main Panels */
+.content-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.panel {
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
   border-radius: 14px;
-  background: #eff6ff;
-  color: var(--primary);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.panel-accent-blue {
+  border-top: 4px solid #2563eb;
+}
+
+.panel-accent-indigo {
+  border-top: 4px solid #6366f1;
+}
+
+.panel-head {
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--divider);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.panel-head-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.panel-head h2 {
+  margin: 0;
+  font-size: 16.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.panel-head .text-muted {
+  margin-top: 2px;
+}
+
+.panel-body {
+  padding: 20px 22px;
+}
+
+.step-badge {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  font-size: 14px;
+  font-weight: 700;
   display: grid;
   place-items: center;
+  flex-shrink: 0;
 }
 
-.empty-card p {
-  max-width: 480px;
-  margin: 8px auto 20px;
-  font-size: 14px;
-  line-height: 1.55;
+.step-blue { background: #dbeafe; color: #1d4ed8; }
+.step-indigo { background: #e0e7ff; color: #4338ca; }
+.step-slate { background: #e2e8f0; color: #334155; }
+
+.theme-dark .step-blue { background: rgba(37, 99, 235, 0.25); color: #93c5fd; }
+.theme-dark .step-indigo { background: rgba(99, 102, 241, 0.25); color: #a5b4fc; }
+.theme-dark .step-slate { background: #334155; color: #e2e8f0; }
+
+.text-muted {
+  color: var(--text-muted);
+  font-size: 13.5px;
+  margin: 0;
+  line-height: 1.5;
 }
 
-.webhook-card h2 {
+/* Connections */
+.empty-box {
+  background: var(--panel-subtle);
+  border: 2px dashed var(--panel-border);
+  border-radius: 12px;
+  padding: 28px 20px;
+  text-align: center;
+}
+
+.empty-title {
+  font-size: 15px;
+  font-weight: 700;
   margin-bottom: 6px;
 }
 
-.copy-row {
-  margin-top: 14px;
+.conn-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.conn-card {
+  background: var(--panel-subtle);
+  border: 1.5px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+
+.conn-card.conn-active {
+  background: var(--active-bg);
+  border-color: var(--active-border);
+}
+
+.conn-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.conn-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.conn-title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.conn-btns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tag {
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.tag-green { background: #16a34a; color: #ffffff; }
+.tag-neutral { background: #64748b; color: #ffffff; }
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 600px) {
+  .info-grid { grid-template-columns: 1fr; }
+}
+
+.info-cell {
+  background: var(--panel-bg);
+  border: 1px solid var(--divider);
+  border-radius: 9px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.info-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.info-value {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+
+.ok-text { color: #16a34a; }
+.warn-text { color: #d97706; }
+
+.card-feedback {
+  margin-top: 12px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.feedback-ok { background: #dcfce7; color: #166534; }
+.feedback-err { background: #fee2e2; color: #991b1b; }
+
+/* Webhook Section */
+.section-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.webhook-bar {
   display: flex;
   gap: 10px;
   align-items: stretch;
   flex-wrap: wrap;
 }
 
-.webhook-url {
+.webhook-code {
   flex: 1;
   min-width: 240px;
-  background: #f8fafc;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 12px;
-  font-size: 12.5px;
+  background: var(--code-bg);
+  color: var(--code-text);
+  padding: 12px 14px;
+  border-radius: 10px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.45;
   word-break: break-all;
+  display: flex;
+  align-items: center;
 }
 
-.guide-card {
+.copy-btn {
+  min-width: 115px;
+}
+
+.events-box {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--divider);
+}
+
+.events-title {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+
+.event-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.event-chip {
+  background: var(--chip-bg);
+  border: 1px solid var(--chip-border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.event-chip code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 700;
+  color: #2563eb;
+}
+.theme-dark .event-chip code { color: #93c5fd; }
+
+.event-chip em {
+  font-style: normal;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* Accordion */
+.panel-compact {
   padding: 0;
-  overflow: hidden;
 }
 
-.guide-toggle {
+.accordion-btn {
   width: 100%;
   background: transparent;
   border: none;
-  padding: 16px 24px;
+  padding: 15px 22px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 14px;
-  font-weight: 600;
+  gap: 12px;
   color: var(--text);
+  font-size: 14px;
   cursor: pointer;
+  text-align: left;
+}
+.accordion-btn:hover { background: var(--panel-subtle); }
+
+.accordion-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
-.guide-toggle:hover {
-  background: #f8fafc;
+.accordion-arrow {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  flex-shrink: 0;
 }
 
-.chevron {
-  font-size: 11px;
-  color: var(--muted);
+.checklist-body {
+  padding: 4px 22px 20px;
+  border-top: 1px solid var(--divider);
 }
 
-.guide-steps {
-  padding: 4px 24px 20px;
-  border-top: 1px solid var(--border);
+.checklist {
+  margin: 14px 0 0;
+  padding-left: 20px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-}
-
-.step-item {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  padding-top: 12px;
-}
-
-.step-num {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: #eff6ff;
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 700;
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
-.step-item p {
-  margin: 4px 0 0;
+  gap: 10px;
   font-size: 13.5px;
-  color: var(--muted);
-  line-height: 1.5;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+.checklist strong { color: var(--text); }
+
+/* Footer */
+.footer-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 6px;
 }
 
-.loading-card {
-  text-align: center;
-  padding: 44px 24px;
-}
-
-.loading-title {
-  margin: 14px 0 4px;
+.footer-link, .footer-danger {
+  background: none;
+  border: none;
+  font-size: 12.5px;
   font-weight: 600;
+  cursor: pointer;
+  padding: 4px 0;
 }
+.footer-link { color: var(--text-muted); }
+.footer-link:hover { color: var(--text); text-decoration: underline; }
+.footer-danger { color: #dc2626; }
+.footer-danger:hover { text-decoration: underline; }
 
-.spinner {
-  width: 28px;
-  height: 28px;
-  margin: 0 auto;
-  border: 3px solid #e2e8f0;
-  border-top-color: var(--primary);
-  border-radius: 50%;
-  animation: spin 0.75s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
+/* Buttons */
 .btn {
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: 9px;
   font-size: 13.5px;
   font-weight: 600;
-  padding: 9px 15px;
+  padding: 9px 16px;
   border: 1px solid transparent;
-  transition: all 0.15s ease;
+  transition: all 0.14s ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  white-space: nowrap;
 }
-
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.btn-sm {
-  padding: 6px 11px;
-  font-size: 12.5px;
-}
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn-sm { padding: 6px 11px; font-size: 12.5px; }
 
 .btn-primary {
-  background: var(--primary);
-  color: #fff;
+  background: #2563eb;
+  color: #ffffff;
 }
-.btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+.btn-primary:hover:not(:disabled) { background: #1d4ed8; }
 
-.btn-outline {
-  background: #fff;
-  border-color: var(--border);
+.btn-secondary {
+  background: var(--panel-bg);
+  border-color: var(--panel-border);
   color: var(--text);
 }
-.btn-outline:hover:not(:disabled) { background: #f8fafc; }
+.btn-secondary:hover:not(:disabled) { background: var(--panel-subtle); }
 
-.btn-ghost-danger {
-  background: #fff;
-  border-color: #fecaca;
-  color: var(--danger);
+.btn-danger-outline {
+  background: var(--panel-bg);
+  border-color: #fca5a5;
+  color: #dc2626;
 }
-.btn-ghost-danger:hover:not(:disabled) { background: var(--danger-bg); }
+.btn-danger-outline:hover:not(:disabled) { background: #fef2f2; }
+.theme-dark .btn-danger-outline:hover:not(:disabled) { background: rgba(220, 38, 38, 0.16); }
 
-.link-inline {
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--primary);
-  font-size: 12.5px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.link-inline:hover { text-decoration: underline; }
-
-.alert {
-  padding: 12px 14px;
+/* Banners */
+.banner {
+  padding: 12px 16px;
   border-radius: 10px;
   font-size: 13.5px;
-  border: 1px solid transparent;
+  font-weight: 500;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
 }
-.alert-success { background: var(--success-bg); color: var(--success-text); border-color: var(--success-border); }
-.alert-error { background: var(--danger-bg); color: #991b1b; border-color: #fecaca; }
-.alert-warning { background: var(--warning-bg); color: var(--warning-text); border-color: #fde68a; }
-
-.muted {
-  color: var(--muted);
-  font-size: 13.5px;
-  margin: 0;
+.banner-success { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+.banner-error { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+.banner-close {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 18px;
+  cursor: pointer;
+  line-height: 1;
 }
 
-.field-group {
+/* Loading */
+.loading-panel {
+  padding: 48px 24px;
+  text-align: center;
+}
+.loading-title {
+  margin: 14px 0 4px;
+  font-weight: 700;
+}
+.spinner {
+  width: 30px;
+  height: 30px;
+  margin: 0 auto;
+  border: 3px solid var(--divider);
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Inputs & Modal */
+.inline-row {
+  display: flex;
+  gap: 10px;
+}
+.inline-row input { flex: 1; }
+
+.field {
   margin-bottom: 16px;
 }
-.field-group:last-child { margin-bottom: 0; }
-.field-group label {
+.field:last-child { margin-bottom: 0; }
+.field label {
   display: block;
   margin-bottom: 6px;
   font-size: 13px;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--text);
 }
-.opt {
-  font-weight: 400;
-  color: var(--muted);
-}
+.req { color: #dc2626; }
+.opt { font-weight: 400; color: var(--text-muted); }
 
-.field-group input {
+input {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1.5px solid var(--input-border);
+  border-radius: 9px;
   font-size: 14px;
+  background: var(--input-bg);
   color: var(--text);
-  background: #fff;
 }
-.field-group input:focus {
+input:focus {
   outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
 }
 
-.inline-form {
-  display: flex;
-  gap: 10px;
+.adv-section { margin-top: 6px; }
+.adv-toggle {
+  background: none;
+  border: none;
+  padding: 4px 0;
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
 }
-.inline-form input { flex: 1; }
+.theme-dark .adv-toggle { color: #60a5fa; }
 
-.advanced-wrap {
-  margin-top: 6px;
-}
-.advanced-box {
-  margin-top: 12px;
+.adv-card {
+  margin-top: 10px;
   padding: 14px;
-  background: #f8fafc;
-  border: 1px solid var(--border);
   border-radius: 10px;
+  background: var(--panel-subtle);
+  border: 1px solid var(--panel-border);
 }
+
 .two-col {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
-.field-hint {
+@media (max-width: 520px) {
+  .two-col { grid-template-columns: 1fr; }
+}
+
+.hint {
   margin: 10px 0 0;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--text-muted);
   line-height: 1.45;
 }
 
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.55);
-  backdrop-filter: blur(2px);
+  background: rgba(2, 6, 23, 0.65);
+  backdrop-filter: blur(3px);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 16px;
   z-index: 1000;
 }
+
 .modal {
-  background: #fff;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
   width: 100%;
-  max-width: 510px;
+  max-width: 520px;
   border-radius: 16px;
-  box-shadow: 0 24px 48px -12px rgba(15, 23, 42, 0.25);
+  box-shadow: 0 24px 50px rgba(0, 0, 0, 0.3);
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
-.modal-header {
+
+.modal-head {
   padding: 18px 22px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--divider);
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
 }
-.modal-subtitle {
-  margin: 3px 0 0;
-  font-size: 12.5px;
-  color: var(--muted);
+.modal-head h2 {
+  margin: 0 0 3px;
+  font-size: 17px;
+  font-weight: 700;
 }
-.icon-close {
+.modal-close {
   background: none;
   border: none;
-  font-size: 22px;
+  font-size: 24px;
   line-height: 1;
-  color: var(--muted);
+  color: var(--text-muted);
   cursor: pointer;
-  padding: 2px 6px;
 }
-.icon-close:hover { color: var(--text); }
+.modal-close:hover { color: var(--text); }
 
 .modal-body {
   padding: 20px 22px;
   max-height: 68vh;
   overflow-y: auto;
 }
-.modal-footer {
+
+.modal-foot {
   padding: 14px 22px;
-  border-top: 1px solid var(--border);
-  background: #f8fafc;
+  border-top: 1px solid var(--divider);
+  background: var(--panel-subtle);
   display: flex;
   justify-content: flex-end;
   gap: 10px;
