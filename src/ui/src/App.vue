@@ -52,9 +52,38 @@
                 <h2>1. Romdix SMS Connection</h2>
                 <p class="muted">Outbound SMS routes through your connected Romdix SMS account.</p>
               </div>
-              <button v-if="providers.length === 0" @click="openModal()" class="btn btn-primary">
-                + Connect Romdix SMS
-              </button>
+              <div class="card-head-actions">
+                <button v-if="providers.length === 0" @click="openModal()" class="btn btn-primary">
+                  + Connect Romdix SMS
+                </button>
+                <div class="help-tip-wrap">
+                  <button type="button" class="help-icon-btn" aria-label="CRM default provider instructions">?</button>
+                  <div class="help-popover" role="tooltip">
+                    <div class="bubble-top">
+                      <span class="bubble-pill">
+                        <span class="bubble-dot"></span>
+                        Required in CRM
+                      </span>
+                      <span class="help-pop-title">Set default Telephony Provider</span>
+                    </div>
+                    <p class="help-pop-desc">
+                      In your sub-account, enable <strong>Romdix SMS</strong> as your default provider so
+                      Conversations and Workflows send through it:
+                    </p>
+                    <div class="bubble-path">
+                      <span class="path-chip">Settings</span>
+                      <span class="path-sep">&rarr;</span>
+                      <span class="path-chip">Phone System</span>
+                      <span class="path-sep">&rarr;</span>
+                      <span class="path-chip">Additional Settings</span>
+                      <span class="path-sep">&rarr;</span>
+                      <span class="path-chip">Telephony Provider</span>
+                      <span class="path-sep">&rarr;</span>
+                      <span class="path-chip path-chip-active">Romdix SMS</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div class="card-body">
@@ -115,28 +144,6 @@
               </div>
             </div>
           </section>
-
-          <!-- Prominent Bubble: Default Telephony Provider -->
-          <aside class="notice-bubble" role="note" aria-label="Set default Telephony Provider">
-            <div class="bubble-top">
-              <span class="bubble-pill">
-                <span class="bubble-dot"></span>
-                Required in CRM
-              </span>
-              <span class="bubble-title">Turn on Romdix SMS as your default Telephony Provider</span>
-            </div>
-            <div class="bubble-path">
-              <span class="path-chip">Settings</span>
-              <span class="path-sep">&rarr;</span>
-              <span class="path-chip">Phone System</span>
-              <span class="path-sep">&rarr;</span>
-              <span class="path-chip">Additional Settings</span>
-              <span class="path-sep">&rarr;</span>
-              <span class="path-chip">Telephony Provider</span>
-              <span class="path-sep">&rarr;</span>
-              <span class="path-chip path-chip-active">Romdix SMS</span>
-            </div>
-          </aside>
 
           <!-- Section 2: 2-Way Webhook (Collapsed by default) -->
           <section v-if="inboundKey" class="card">
@@ -853,12 +860,13 @@ h2 {
   border: 1.5px solid #cbd5e1;
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.07), 0 1px 3px rgba(15, 23, 42, 0.05);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .card-head {
   padding: 18px 22px;
   border-bottom: 1px solid #cbd5e1;
+  border-radius: 11px 11px 0 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1171,34 +1179,98 @@ h2 {
   color: #1f2937;
 }
 
-/* Prominent Bubble */
-.notice-bubble {
+/* Card Header ? Tooltip */
+.card-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.help-tip-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.help-icon-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1.5px solid #94a3b8;
+  background: #ffffff;
+  color: #1f2937;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 5px rgba(15, 23, 42, 0.08);
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.help-icon-btn:hover,
+.help-icon-btn:focus {
+  outline: none;
+  background: #f8fafc;
+  border-color: #111827;
+  color: #111827;
+}
+
+.help-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 360px;
+  max-width: calc(100vw - 48px);
   background: #ffffff;
   border: 1.5px solid #cbd5e1;
-  border-radius: 22px;
-  padding: 16px 22px;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.07), 0 1px 3px rgba(15, 23, 42, 0.05);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  border-radius: 14px;
+  padding: 15px 16px;
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.16), 0 2px 6px rgba(15, 23, 42, 0.08);
+  z-index: 50;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
+}
+
+.help-popover::before {
+  content: '';
+  position: absolute;
+  top: -12px;
+  right: 0;
+  left: 0;
+  height: 12px;
+}
+
+.help-tip-wrap:hover .help-popover,
+.help-tip-wrap:focus-within .help-popover {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0);
 }
 
 .bubble-top {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
+  margin-bottom: 8px;
 }
 
 .bubble-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 11px;
+  padding: 3px 10px;
   border-radius: 999px;
   background: #111827;
   color: #ffffff;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -1210,27 +1282,34 @@ h2 {
   background: #22c55e;
 }
 
-.bubble-title {
-  font-size: 15px;
+.help-pop-title {
+  font-size: 14.5px;
   font-weight: 600;
   color: #111827;
+}
+
+.help-pop-desc {
+  margin: 0 0 10px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #374151;
 }
 
 .bubble-path {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 5px;
 }
 
 .path-chip {
   display: inline-flex;
   align-items: center;
-  padding: 4px 11px;
+  padding: 3px 9px;
   border-radius: 999px;
   background: #f8fafc;
   border: 1px solid #cbd5e1;
-  font-size: 13.5px;
+  font-size: 12.5px;
   font-weight: 500;
   color: #1f2937;
 }
@@ -1244,7 +1323,7 @@ h2 {
 
 .path-sep {
   color: #64748b;
-  font-size: 13.5px;
+  font-size: 12.5px;
   font-weight: 600;
 }
 
