@@ -124,23 +124,11 @@
             </button>
 
             <div v-if="showWebhook" class="accordion-body">
-              <p class="muted" style="margin: 12px 0;">
-                Add this URL in Romdix SMS under <strong>Developer → Webhooks → New Webhook</strong> to receive replies and delivery updates.
-              </p>
-
               <div class="copy-row">
                 <code class="url-box">{{ webhookUrl }}</code>
                 <button type="button" @click="copyWebhookUrl" class="btn btn-secondary copy-btn">
                   {{ copiedWebhook ? 'Copied' : 'Copy URL' }}
                 </button>
-              </div>
-
-              <div class="events-row">
-                <span class="events-label">Events to enable:</span>
-                <code class="event-tag">sms.received</code>
-                <code class="event-tag">sms.sent</code>
-                <code class="event-tag">sms.delivered</code>
-                <code class="event-tag">sms.failed</code>
               </div>
             </div>
           </section>
@@ -152,11 +140,65 @@
               <span class="muted">{{ showHelp ? 'Hide' : 'Show' }}</span>
             </button>
             <div v-if="showHelp" class="guide-body">
-              <ol class="guide-list">
-                <li>In Romdix SMS, open <strong>Developer → API Keys → New Key</strong>, enable <strong>Account</strong> and <strong>SMS</strong> permissions, and copy the key.</li>
-                <li>Click <strong>+ Connect Romdix SMS</strong> above, enter your API Key, click <strong>Test Connection</strong>, and save.</li>
-                <li>Open <strong>2. 2-Way Webhook</strong> above, copy the URL, open Romdix SMS → <strong>Developer → Webhooks → New Webhook</strong>, paste the URL, and select <code>sms.received</code>, <code>sms.sent</code>, <code>sms.delivered</code>, and <code>sms.failed</code>.</li>
-              </ol>
+              <div class="guide-steps">
+                <div class="guide-step">
+                  <span class="step-num">1</span>
+                  <div class="step-content">
+                    <div class="step-title">Create an API Key in Romdix SMS</div>
+                    <p class="step-desc">
+                      Open <strong>Developer → API Keys → New Key</strong>, select permissions
+                      <code>account.view</code>, <code>sms.send</code>, and <code>sms.read</code>, leave
+                      <strong>Expires</strong> blank, and copy the key immediately (shown once).
+                    </p>
+                  </div>
+                </div>
+
+                <div class="guide-step">
+                  <span class="step-num">2</span>
+                  <div class="step-content">
+                    <div class="step-title">Connect your account</div>
+                    <p class="step-desc">
+                      Click <strong>+ Connect Romdix SMS</strong> above, paste your API Key, click
+                      <strong>Test Connection</strong>, and click <strong>Save Connection</strong>. Leave SIM ID
+                      and Sender ID blank unless you want to pin a specific device SIM or sender.
+                    </p>
+                  </div>
+                </div>
+
+                <div class="guide-step">
+                  <span class="step-num">3</span>
+                  <div class="step-content">
+                    <div class="step-title">Configure 2-Way Webhook &amp; delivery updates</div>
+                    <p class="step-desc">
+                      Expand <strong>2. 2-Way Webhook</strong> above and copy the URL. In Romdix SMS, go to
+                      <strong>Developer → Webhooks → New Webhook</strong>, paste the URL, select the events below,
+                      and save:
+                    </p>
+                    <div class="guide-tags">
+                      <code class="event-tag">sms.received</code>
+                      <code class="event-tag">sms.sent</code>
+                      <code class="event-tag">sms.delivered</code>
+                      <code class="event-tag">sms.failed</code>
+                    </div>
+                    <p class="step-note">
+                      Optional: copy the one-time <strong>Signing Secret</strong> shown after creating the webhook and
+                      paste it under <strong>Edit → Optional settings → Webhook Signing Secret</strong>.
+                    </p>
+                  </div>
+                </div>
+
+                <div class="guide-step">
+                  <span class="step-num">4</span>
+                  <div class="step-content">
+                    <div class="step-title">Verify in GoHighLevel</div>
+                    <p class="step-desc">
+                      If using workflows, set <strong>Romdix SMS Connector</strong> under
+                      <strong>Settings → Phone System → Additional Settings → Telephony Provider</strong>, then
+                      send a test SMS and reply back to confirm two-way messaging in Conversations.
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -1003,33 +1045,96 @@ h2 {
 .accordion-btn:hover { background: #f8fafc; }
 
 .accordion-body {
-  padding: 4px 22px 20px;
+  padding: 18px 22px 20px;
   border-top: 1px solid #cbd5e1;
 }
 
 .guide-body {
-  padding: 6px 22px 20px;
+  padding: 18px 22px 20px;
   border-top: 1px solid #cbd5e1;
 }
 
-.guide-list {
-  margin: 14px 0 0;
-  padding-left: 20px;
+.guide-steps {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+}
+
+.guide-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 16px;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.step-num {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: #111827;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+}
+
+.step-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.step-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 4px;
+}
+
+.step-desc {
+  margin: 0;
   font-size: 14.5px;
   line-height: 1.6;
   color: #374151;
 }
-.guide-list strong { color: #111827; }
-.guide-list code {
-  background: #f1f5f9;
+
+.step-desc strong {
+  color: #111827;
+}
+
+.step-desc code,
+.step-note code {
+  background: #ffffff;
   border: 1px solid #cbd5e1;
   padding: 1px 6px;
   border-radius: 5px;
   font-size: 13px;
   color: #111827;
+}
+
+.guide-tags {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.step-note {
+  margin: 10px 0 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #4b5563;
+}
+
+.step-note strong {
+  color: #1f2937;
 }
 
 /* Footer */
