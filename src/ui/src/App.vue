@@ -190,11 +190,23 @@
                 <div class="guide-step">
                   <span class="step-num">4</span>
                   <div class="step-content">
-                    <div class="step-title">Verify in GoHighLevel</div>
+                    <div class="step-title">Set Romdix SMS as your default Telephony Provider</div>
                     <p class="step-desc">
-                      If using workflows, set <strong>Romdix SMS Connector</strong> under
-                      <strong>Settings → Phone System → Additional Settings → Telephony Provider</strong>, then
-                      send a test SMS and reply back to confirm two-way messaging in Conversations.
+                      In your sub-account, go to
+                      <strong>Settings → Phone System → Additional Settings → Telephony Provider</strong>, turn on /
+                      select <strong>Romdix SMS</strong> as your default provider, and save. This is required for
+                      Conversations and Workflows to send through Romdix SMS.
+                    </p>
+                  </div>
+                </div>
+
+                <div class="guide-step">
+                  <span class="step-num">5</span>
+                  <div class="step-content">
+                    <div class="step-title">Test two-way SMS</div>
+                    <p class="step-desc">
+                      Send a test SMS from <strong>Conversations</strong> and reply back from a phone to confirm
+                      outbound delivery status and inbound replies both appear automatically.
                     </p>
                   </div>
                 </div>
