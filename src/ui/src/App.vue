@@ -116,6 +116,28 @@
             </div>
           </section>
 
+          <!-- Prominent Bubble: Default Telephony Provider -->
+          <aside class="notice-bubble" role="note" aria-label="Set default Telephony Provider">
+            <div class="bubble-top">
+              <span class="bubble-pill">
+                <span class="bubble-dot"></span>
+                Required in CRM
+              </span>
+              <span class="bubble-title">Turn on Romdix SMS as your default Telephony Provider</span>
+            </div>
+            <div class="bubble-path">
+              <span class="path-chip">Settings</span>
+              <span class="path-sep">&rarr;</span>
+              <span class="path-chip">Phone System</span>
+              <span class="path-sep">&rarr;</span>
+              <span class="path-chip">Additional Settings</span>
+              <span class="path-sep">&rarr;</span>
+              <span class="path-chip">Telephony Provider</span>
+              <span class="path-sep">&rarr;</span>
+              <span class="path-chip path-chip-active">Romdix SMS</span>
+            </div>
+          </aside>
+
           <!-- Section 2: 2-Way Webhook (Collapsed by default) -->
           <section v-if="inboundKey" class="card">
             <button type="button" class="accordion-btn" @click="showWebhook = !showWebhook">
@@ -1147,6 +1169,83 @@ h2 {
 
 .step-note strong {
   color: #1f2937;
+}
+
+/* Prominent Bubble */
+.notice-bubble {
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 22px;
+  padding: 16px 22px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.07), 0 1px 3px rgba(15, 23, 42, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bubble-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.bubble-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: #111827;
+  color: #ffffff;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.bubble-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+}
+
+.bubble-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.bubble-path {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.path-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: #1f2937;
+}
+
+.path-chip-active {
+  background: #ecfdf5;
+  border-color: #6ee7b7;
+  color: #065f46;
+  font-weight: 600;
+}
+
+.path-sep {
+  color: #64748b;
+  font-size: 13.5px;
+  font-weight: 600;
 }
 
 /* Footer */
