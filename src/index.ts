@@ -153,10 +153,8 @@ app.post("/api/auth/sso", rateLimit(30, 60_000), async (req: Request, res: Respo
 app.get("/api/settings", authenticateRequest, (req: AuthedRequest, res: Response) => {
   const locationId = req.locationId!;
   const creds = storage.getCredentials(locationId);
-  const providers = (creds?.providers || []).filter((p) => p.type === "zender");
-  const defaultProviderId = providers.some((p) => p.id === creds?.defaultProviderId)
-    ? creds!.defaultProviderId
-    : providers[0]?.id || "";
+  const providers = (creds?.providers || []).filter((p) => p.type === "zender").slice(0, 1);
+  const defaultProviderId = providers[0]?.id || "";
   res.json({
     defaultProviderId,
     providers,
@@ -177,8 +175,12 @@ app.post("/api/settings", authenticateRequest, (req: AuthedRequest, res: Respons
       type: "zender",
       config: { ...(p.config || {}), baseUrl: "https://sms.romdix.com" },
     }));
+  if (zenderProviders.length > 1) {
+    return res.status(400).json({ error: "Only one Romdix SMS connection is allowed per sub-account." });
+  }
   try {
-    storage.saveCredentials(locationId, { defaultProviderId, providers: zenderProviders });
+    const singleDefaultId = zenderProviders[0]?.id || defaultProviderId || "";
+    storage.saveCredentials(locationId, { defaultProviderId: singleDefaultId, providers: zenderProviders });
     console.log("[Settings] Saved for location:", locationId);
     res.json({ success: true });
   } catch (e: any) {

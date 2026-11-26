@@ -38,32 +38,22 @@
           <button type="button" class="alert-close" @click="message = ''" aria-label="Dismiss">&times;</button>
         </div>
 
-        <!-- Manual Location Fallback -->
-        <section v-if="!locationId" class="card">
-          <div class="card-head">
-            <div>
-              <h2>Sub-Account ID</h2>
-              <p class="muted">Open this page inside GoHighLevel, or enter a Location ID below.</p>
-            </div>
-          </div>
-          <div class="card-body">
-            <div class="inline-row">
-              <input v-model="manualIdInput" type="text" placeholder="e.g. Rh3O9aC398g336hh4Ljx" @keyup.enter="useManualId" />
-              <button @click="useManualId" class="btn btn-primary">Load</button>
-            </div>
-          </div>
+        <!-- Open inside CRM notice (no manual sub-account switch page) -->
+        <section v-if="!locationId && !ssoError" class="card center-card">
+          <p class="card-title">Open inside your CRM</p>
+          <p class="muted">Please open this app from inside your GoHighLevel sub-account.</p>
         </section>
 
-        <template v-else>
+        <template v-else-if="locationId">
           <!-- Section 1: Romdix SMS Connection -->
           <section class="card">
             <div class="card-head">
               <div>
                 <h2>1. Romdix SMS Connection</h2>
-                <p class="muted">Outbound SMS routes through your active Romdix SMS account.</p>
+                <p class="muted">Outbound SMS routes through your connected Romdix SMS account.</p>
               </div>
-              <button @click="openModal()" class="btn btn-primary">
-                {{ providers.length > 0 ? '+ Add Connection' : '+ Connect Romdix SMS' }}
+              <button v-if="providers.length === 0" @click="openModal()" class="btn btn-primary">
+                + Connect Romdix SMS
               </button>
             </div>
 
@@ -80,19 +70,10 @@
                   <div class="conn-top">
                     <div class="conn-title-row">
                       <span class="conn-name">{{ provider.name || 'Romdix SMS' }}</span>
-                      <span v-if="defaultProviderId === provider.id" class="badge badge-default">Default</span>
-                      <span v-else class="badge">Standby</span>
+                      <span class="badge badge-default">Active</span>
                     </div>
 
                     <div class="conn-actions">
-                      <button
-                        v-if="defaultProviderId !== provider.id"
-                        @click="setDefaultProvider(provider.id)"
-                        :disabled="saving"
-                        class="btn btn-sm btn-secondary"
-                      >
-                        Set Default
-                      </button>
                       <button
                         @click="testSavedProvider(provider)"
                         :disabled="testingProviderId === provider.id"
@@ -180,9 +161,8 @@
           </section>
 
           <!-- Footer -->
-          <footer class="footer">
-            <button type="button" @click="resetLocation" class="footer-btn">Switch sub-account</button>
-            <button v-if="providers.length > 0" type="button" @click="disconnect" class="footer-btn footer-danger">
+          <footer v-if="providers.length > 0" class="footer">
+            <button type="button" @click="disconnect" class="footer-btn footer-danger">
               Disconnect sub-account
             </button>
           </footer>
@@ -273,7 +253,6 @@ export default {
   data() {
     return {
       locationId: null,
-      manualIdInput: '',
       sessionToken: null,
       ssoError: null,
       inboundKey: null,
@@ -411,20 +390,6 @@ export default {
         this.loading = false;
       }
     },
-    async useManualId() {
-      if (!this.manualIdInput) return;
-      this.locationId = this.manualIdInput.trim();
-      this.loading = true;
-      await this.loadSettings();
-      this.loading = false;
-    },
-    resetLocation() {
-      this.locationId = null;
-      this.providers = [];
-      this.defaultProviderId = '';
-      this.message = '';
-      this.cardTestStatus = {};
-    },
     async loadSettings() {
       try {
         const headers = this.sessionToken ? { Authorization: `Bearer ${this.sessionToken}` } : {};
@@ -437,12 +402,9 @@ export default {
         }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        this.providers = (data.providers || []).filter((p) => p.type === 'zender');
-        this.defaultProviderId = data.defaultProviderId || '';
+        this.providers = (data.providers || []).filter((p) => p.type === 'zender').slice(0, 1);
+        this.defaultProviderId = this.providers[0]?.id || '';
         this.inboundKey = data.inboundKey || null;
-        if (this.providers.length > 0 && !this.providers.some((p) => p.id === this.defaultProviderId)) {
-          this.defaultProviderId = this.providers[0].id;
-        }
       } catch (e) {
         this.ssoError = `Could not load settings: ${e.message}`;
       }
@@ -498,6 +460,11 @@ export default {
       return this.hasSavedSecret(field) ? 'Saved — leave blank to keep' : fallback;
     },
     async saveProvider() {
+      if (!this.editingProviderId && this.providers.length >= 1) {
+        this.modalError = true;
+        this.modalMessage = 'Only one Romdix SMS connection is allowed.';
+        return;
+      }
       const hasApiKey = this.modalSettings.config.zenderApiKey || this.hasSavedSecret('zenderApiKey');
       if (!hasApiKey) {
         this.modalError = true;
@@ -521,10 +488,8 @@ export default {
         }
       } else {
         const created = { id: 'prov_' + Date.now().toString(36), ...payload };
-        this.providers.push(created);
-        if (this.providers.length === 1) {
-          this.defaultProviderId = created.id;
-        }
+        this.providers = [created];
+        this.defaultProviderId = created.id;
       }
 
       try {
@@ -536,17 +501,6 @@ export default {
       } catch (e) {
         this.modalMessage = `Save failed: ${e.message}`;
         this.modalError = true;
-      } finally {
-        this.saving = false;
-      }
-    },
-    async setDefaultProvider(id) {
-      this.defaultProviderId = id;
-      this.saving = true;
-      try {
-        await this.persistState();
-        this.message = 'Default connection updated.';
-        this.error = false;
       } finally {
         this.saving = false;
       }
@@ -1081,7 +1035,7 @@ h2 {
 /* Footer */
 .footer {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   padding: 4px 2px 0;
 }
